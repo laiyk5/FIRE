@@ -143,28 +143,43 @@ const Models = (() => {
   // ────────────────────────────────────────────────────────────────────────────
 
   /**
-   * China salary prior data (years of experience → salary normalized by career peak 42.5k RMB).
-   * Source: typical professional / tech salary trajectory in China.
+   * China salary prior data (years of experience → salary normalized by career peak).
+   *
+   * Data points: entry (yr 1), junior (yr 6), mid (yr 11), senior/peak (yr 18),
+   * late-career (yr 31). Raw values: 10, 20, 35, 42.5, 30 k RMB/month, representative
+   * of typical Chinese tech/professional sector (Tier-1 cities, ~2015-2023 average).
+   * All values are normalized by the peak (42.5) so the shape is scale-invariant.
+   * Users whose career follows a different country or industry should lower alpha
+   * (prior stiffness) to let their own data dominate the fit.
    */
   const GAMMA_PRIOR_YEARS = [1, 6, 11, 18, 31];
   const GAMMA_PRIOR_SALS  = [10 / 42.5, 20 / 42.5, 35 / 42.5, 1.0, 30 / 42.5];
 
   /**
+   * Large finite penalty returned by gammaEval when the power term overflows.
+   * Distinct from the 1e10 "invalid parameter" penalty in objective functions:
+   * 1e200 signals a numerical overflow in the function evaluation itself,
+   * whereas 1e10 signals that a parameter is outside its valid domain.
+   */
+  const GAMMA_OVERFLOW_PENALTY = 1e200;
+
+  /**
    * Evaluate the Career Gamma function: f(x) = a · x^k · exp(−b·x) + c
-   * where x = years of experience (x > 0).
+   * where x = years of experience (x > 0, 1-indexed so x=1 is first career year).
    */
   function gammaEval(x, a, k, b, c) {
     const sx = Math.max(x, 0.001);
     const bx = b * sx;
     if (bx > 700) return Math.max(0, c);           // exp underflows to 0
     const xk = Math.pow(sx, k);
-    if (!isFinite(xk)) return 1e200;               // overflow — large penalty signal
+    if (!isFinite(xk)) return GAMMA_OVERFLOW_PENALTY;
     return a * xk * Math.exp(-bx) + c;
   }
 
   /**
    * Nelder-Mead derivative-free optimizer.
    * Minimises fn(params) starting from x0; returns best parameter vector found.
+   * Tolerance of 1e-8 is sufficient for salary fitting where values are in thousands.
    * @param {(p: number[]) => number} fn
    * @param {number[]} x0
    * @param {number} [maxIter=10000]
@@ -173,7 +188,7 @@ const Models = (() => {
   function nelderMead(fn, x0, maxIter) {
     maxIter = maxIter || 10000;
     const n = x0.length;
-    const tol = 1e-12;
+    const tol = 1e-8;
 
     // Build initial simplex: one vertex per dimension displaced by 5 %
     const verts = [x0.slice()];
@@ -256,7 +271,10 @@ const Models = (() => {
    * @param {number[]} salaries — historical salaries aligned to years
    * @param {number}   endYear  — last predicted calendar year (unused but kept for API parity)
    * @param {number}   [alpha=0.8] — prior stiffness (0 = data only, 1 = balanced)
-   * @param {number}   [expOffset=0] — years of experience before the first data year (shifts x-axis)
+   * @param {number}   [expOffset=0] — total years of experience completed before the first data year.
+   *   The model uses 1-indexed experience years: x = (calYear − minYear + 1) + expOffset,
+   *   so x=1 means "end of first career year." With expOffset=5, your first data year is
+   *   treated as year 6 of your career (5 prior years + the current year).
    * @returns {{ predict: (year: number) => number, params: object }}
    */
   function fitCareerGamma(years, salaries, endYear, alpha, expOffset) {

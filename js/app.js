@@ -276,12 +276,13 @@ function fireApp() {
 
       let params;
       if (this.salaryParams.model === 'careerGamma') {
+        const sp = this.salaryParams;
         params = {
-          ...this.salaryParams,
-          a: isFinite(parseFloat(this.manualSalaryA)) ? parseFloat(this.manualSalaryA) : this.salaryParams.a,
-          k: parseFloat(this.manualSalaryK) || this.salaryParams.k,
-          b: parseFloat(this.manualSalaryB) || this.salaryParams.b,
-          c: isFinite(parseFloat(this.manualSalaryC)) ? parseFloat(this.manualSalaryC) : this.salaryParams.c,
+          ...sp,
+          a: isFinite(parseFloat(this.manualSalaryA)) ? parseFloat(this.manualSalaryA) : sp.a,
+          k: isFinite(parseFloat(this.manualSalaryK)) ? parseFloat(this.manualSalaryK) : sp.k,
+          b: isFinite(parseFloat(this.manualSalaryB)) ? parseFloat(this.manualSalaryB) : sp.b,
+          c: isFinite(parseFloat(this.manualSalaryC)) ? parseFloat(this.manualSalaryC) : sp.c,
         };
       } else {
         params = {

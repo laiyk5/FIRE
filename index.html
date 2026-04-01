@@ -226,7 +226,9 @@
             placeholder="e.g. 5"
           />
           <p class="mt-1 text-xs text-gray-400">
-            Set this to your total years of experience at the start of your historical data so the model places you correctly on the China career curve.
+            Set this to how many years you had already worked before your first recorded year.
+            For example, set 5 if your first data year was your 6th year of career
+            (this places you at <em>x</em> = 6 on the experience axis).
           </p>
         </div>
       </div>
@@ -286,8 +288,8 @@
       <div>
         <p class="text-xs text-gray-400 mb-4">
           Adjust the fitted Career Gamma curve and click <strong>Apply</strong> to regenerate all salary predictions.
-          Model: <code class="bg-gray-100 px-1 rounded">f(x) = a · x<sup>k</sup> · e<sup>−b·x</sup> + c</code>
-          where <em>x</em> = years of experience from first data year.
+          Model: <code class="bg-gray-100 px-1 rounded">f(x) = a * x^k * exp(-b*x) + c</code>
+          where <em>x</em> = years of experience (1-indexed from first career year).
         </p>
         <div class="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-4">
           <div>
