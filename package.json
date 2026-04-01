@@ -1,0 +1,7 @@
+{
+  "dependencies": {
+    "alpinejs": "^3.14.1",
+    "chart.js": "^4.4.4",
+    "chartjs-plugin-annotation": "^3.0.1"
+  }
+}
