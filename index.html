@@ -1,0 +1,771 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>🔥 FIRE Simulator</title>
+
+  <!-- Tailwind CSS (pre-built) -->
+  <link rel="stylesheet" href="vendor/tailwind.css" />
+
+  <!-- Chart.js v4 + annotation plugin -->
+  <script src="vendor/chart.umd.js"></script>
+  <script src="vendor/chartjs-plugin-annotation.min.js"></script>
+
+  <!-- App modules (must load before Alpine.js initialises) -->
+  <script src="js/models.js"></script>
+  <script src="js/simulator.js"></script>
+  <script src="js/charts.js"></script>
+  <script src="js/app.js"></script>
+
+  <!-- Alpine.js v3 (defer so modules above run first) -->
+  <script defer src="vendor/alpine.js"></script>
+
+  <style>
+    [x-cloak] { display: none !important; }
+
+    /* Subtle distinction between historical and predicted table rows */
+    .row-predicted { background-color: #f0fdf4; }
+
+    /* Smooth highlight for inputs */
+    input:focus { outline: none; box-shadow: 0 0 0 2px rgba(99,102,241,0.4); border-color: #6366f1; }
+    select:focus { outline: none; box-shadow: 0 0 0 2px rgba(99,102,241,0.4); }
+  </style>
+</head>
+
+<body class="bg-gray-50 min-h-screen text-gray-900">
+
+<div
+  x-data="fireApp()"
+  x-init="init()"
+  class="max-w-7xl mx-auto px-4 py-8"
+>
+
+  <!-- ═══════════════════════════════════════════════════════════════════════ -->
+  <!--  Header                                                                -->
+  <!-- ═══════════════════════════════════════════════════════════════════════ -->
+  <header class="text-center mb-10">
+    <h1 class="text-4xl font-extrabold text-indigo-600 tracking-tight">🔥 FIRE Simulator</h1>
+    <p class="mt-2 text-gray-500">Financial Independence / Retire Early — Interactive Calculator</p>
+  </header>
+
+  <!-- ═══════════════════════════════════════════════════════════════════════ -->
+  <!--  § 1  Initial Setup                                                    -->
+  <!-- ═══════════════════════════════════════════════════════════════════════ -->
+  <section class="bg-white rounded-xl shadow p-6 mb-6">
+    <h2 class="text-lg font-semibold mb-4 text-gray-700">⚙️ Initial Setup</h2>
+    <div class="grid grid-cols-2 sm:grid-cols-3 gap-4">
+
+      <div>
+        <label class="block text-xs font-medium text-gray-500 mb-1">Current Year</label>
+        <input
+          type="number"
+          x-model.number="currentYear"
+          class="w-full border rounded-lg px-3 py-2 text-sm"
+        />
+      </div>
+
+      <div>
+        <label class="block text-xs font-medium text-gray-500 mb-1">Starting Assets ($)</label>
+        <input
+          type="number"
+          x-model.number="initialAssets"
+          class="w-full border rounded-lg px-3 py-2 text-sm"
+        />
+      </div>
+
+      <div>
+        <label class="block text-xs font-medium text-gray-500 mb-1">Predict Years Ahead</label>
+        <input
+          type="number"
+          x-model.number="predictYears"
+          min="1" max="100"
+          class="w-full border rounded-lg px-3 py-2 text-sm"
+        />
+      </div>
+
+    </div>
+  </section>
+
+  <!-- ═══════════════════════════════════════════════════════════════════════ -->
+  <!--  § 2  Historical Data Table                                            -->
+  <!-- ═══════════════════════════════════════════════════════════════════════ -->
+  <section class="bg-white rounded-xl shadow p-6 mb-6">
+    <div class="flex items-center justify-between mb-4">
+      <h2 class="text-lg font-semibold text-gray-700">📋 Historical Data</h2>
+      <button
+        @click="addHistoricalYear()"
+        class="inline-flex items-center gap-1 bg-indigo-500 hover:bg-indigo-600 text-white text-sm font-medium px-4 py-2 rounded-lg transition"
+      >
+        + Add Year
+      </button>
+    </div>
+
+    <div class="overflow-x-auto">
+      <table class="w-full text-sm">
+        <thead>
+          <tr class="text-left text-xs text-gray-500 border-b uppercase tracking-wide">
+            <th class="py-2 px-3">Year</th>
+            <th class="py-2 px-3">Salary ($)</th>
+            <th class="py-2 px-3">Costs ($)</th>
+            <th class="py-2 px-3">Return Rate (%)</th>
+            <th class="py-2 px-3">Extra Asset Δ ($)</th>
+            <th class="py-2 px-3"></th>
+          </tr>
+        </thead>
+        <tbody>
+          <template x-for="(row, index) in historicalData" :key="index">
+            <tr class="border-b hover:bg-gray-50">
+              <td class="py-2 px-3">
+                <input
+                  type="number"
+                  x-model.number="row.year"
+                  class="w-24 border rounded-md px-2 py-1"
+                />
+              </td>
+              <td class="py-2 px-3">
+                <input
+                  type="number"
+                  x-model.number="row.salary"
+                  class="w-32 border rounded-md px-2 py-1"
+                />
+              </td>
+              <td class="py-2 px-3">
+                <input
+                  type="number"
+                  x-model.number="row.costs"
+                  class="w-32 border rounded-md px-2 py-1"
+                />
+              </td>
+              <td class="py-2 px-3">
+                <input
+                  type="number"
+                  x-model.number="row.returnRate"
+                  step="0.1"
+                  class="w-24 border rounded-md px-2 py-1"
+                />
+              </td>
+              <td class="py-2 px-3">
+                <input
+                  type="number"
+                  x-model.number="row.assetChanges"
+                  placeholder="0"
+                  class="w-32 border rounded-md px-2 py-1"
+                />
+              </td>
+              <td class="py-2 px-3">
+                <button
+                  @click="removeHistoricalYear(index)"
+                  class="text-red-400 hover:text-red-600 font-medium text-xs transition"
+                >
+                  Remove
+                </button>
+              </td>
+            </tr>
+          </template>
+
+          <template x-if="historicalData.length === 0">
+            <tr>
+              <td colspan="6" class="text-center py-10 text-gray-400 italic">
+                No historical data — click "+ Add Year" to get started.
+              </td>
+            </tr>
+          </template>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- ═══════════════════════════════════════════════════════════════════════ -->
+  <!--  § 3  Model Selection                                                  -->
+  <!-- ═══════════════════════════════════════════════════════════════════════ -->
+  <section class="bg-white rounded-xl shadow p-6 mb-6">
+    <h2 class="text-lg font-semibold mb-4 text-gray-700">🧮 Fit Options</h2>
+
+    <div class="grid grid-cols-1 sm:grid-cols-3 gap-6">
+
+      <!-- Salary Model -->
+      <div>
+        <label class="block text-xs font-medium text-gray-500 mb-1">Salary Model</label>
+        <select x-model="salaryModel" class="w-full border rounded-lg px-3 py-2 text-sm bg-white">
+          <option value="careerGamma">Career Gamma + China Prior (default)</option>
+          <option value="logisticLinear">Logistic + Bayesian MAP</option>
+        </select>
+        <p class="mt-1 text-xs text-gray-400"
+           x-text="salaryModel === 'careerGamma'
+             ? 'Gamma curve f(x)=a·xᵏ·e⁻ᵇˣ+c with Bayesian MAP against China salary prior. Models career peak & late-career decline.'
+             : 'Logistic sigmoid with Bayesian MAP priors — stable with few samples.'">
+        </p>
+        <!-- Alpha slider — only for Career Gamma -->
+        <div x-show="salaryModel === 'careerGamma'" class="mt-3">
+          <label class="block text-xs font-medium text-gray-500 mb-1">
+            α — Prior Stiffness
+            <span class="font-normal text-gray-400 ml-1">0 = data only · higher = closer to China prior</span>
+          </label>
+          <div class="flex items-center gap-3">
+            <input
+              type="range"
+              x-model.number="salaryAlpha"
+              min="0" max="2" step="0.05"
+              class="flex-1 accent-indigo-500"
+            />
+            <span class="text-sm font-mono w-10 text-right" x-text="salaryAlpha.toFixed(2)"></span>
+          </div>
+        </div>
+        <!-- Experience offset — only for Career Gamma -->
+        <div x-show="salaryModel === 'careerGamma'" class="mt-3">
+          <label class="block text-xs font-medium text-gray-500 mb-1">
+            Experience Offset (years)
+            <span class="font-normal text-gray-400 ml-1">career year of your first data year − 1</span>
+          </label>
+          <input
+            type="number"
+            x-model.number="salaryExpOffset"
+            min="0" step="1"
+            class="w-full border rounded-lg px-3 py-2 text-sm"
+            placeholder="0 = auto-estimate"
+          />
+          <p class="mt-1 text-xs text-gray-400">
+            Leave at <strong>0</strong> to auto-estimate from your data shape (recommended).
+            Or set manually: enter how many years you had already worked before your first recorded year.
+            For example, set 5 if your first data year was your 6th career year
+            (places you at <em>x</em> = 6 on the experience axis).
+            The estimated value is shown here after each fit.
+          </p>
+        </div>
+      </div>
+
+      <!-- Cost Model -->
+      <div>
+        <label class="block text-xs font-medium text-gray-500 mb-1">Cost Model</label>
+        <select x-model="costModel" class="w-full border rounded-lg px-3 py-2 text-sm bg-white">
+          <option value="fixedSaveRate">Fixed Save Rate (default)</option>
+          <option value="inflationLinear">Inflation + Linear</option>
+          <option value="bellCurve">Bell Curve</option>
+        </select>
+        <p class="mt-1 text-xs text-gray-400"
+           x-text="costModel === 'fixedSaveRate'
+             ? 'Costs = Salary × (1 − save rate).'
+             : costModel === 'inflationLinear'
+               ? 'Costs grow with inflation plus linear drift.'
+               : 'Costs peak in middle age (family, mortgage, etc.).'">
+        </p>
+      </div>
+
+      <!-- Return Model -->
+      <div>
+        <label class="block text-xs font-medium text-gray-500 mb-1">Investment Return Model</label>
+        <select x-model="returnModel" class="w-full border rounded-lg px-3 py-2 text-sm bg-white">
+          <option value="ma3">3-Year Moving Average (default)</option>
+          <option value="fixedRate">Fixed Rate</option>
+        </select>
+        <div x-show="returnModel === 'fixedRate'" class="mt-2 flex items-center gap-2">
+          <input
+            type="number"
+            x-model.number="fixedReturnRate"
+            step="0.1" min="0"
+            placeholder="e.g. 7"
+            class="w-24 border rounded-lg px-2 py-1 text-sm"
+          />
+          <span class="text-xs text-gray-400">% per year</span>
+        </div>
+        <p class="mt-1 text-xs text-gray-400"
+           x-text="returnModel === 'ma3'
+             ? 'Average of last 3 historical return rates.'
+             : 'User-specified constant annual return.'">
+        </p>
+      </div>
+
+    </div>
+  </section>
+
+  <!-- ═══════════════════════════════════════════════════════════════════════ -->
+  <!--  § 4  Auto-Fit & Predict Button  (right after Fit Options)             -->
+  <!-- ═══════════════════════════════════════════════════════════════════════ -->
+  <div class="text-center mb-6">
+    <button
+      @click="autoFitAndPredict()"
+      class="inline-flex items-center gap-2 bg-green-500 hover:bg-green-600 active:scale-95 text-white font-semibold text-lg px-10 py-3 rounded-xl shadow-lg transition"
+    >
+      🚀 Auto-Fit &amp; Predict
+    </button>
+    <p class="mt-2 text-xs text-gray-400">Runs the models with the options above, then shows parameter panels below where you can fine-tune.</p>
+  </div>
+
+  <!-- ═══════════════════════════════════════════════════════════════════════ -->
+  <!--  § 3b  Salary Model Parameter Overrides (shown after first fit)        -->
+  <!-- ═══════════════════════════════════════════════════════════════════════ -->
+  <section x-show="salaryParams" x-cloak class="bg-white rounded-xl shadow p-6 mb-6">
+    <h2 class="text-lg font-semibold mb-1 text-gray-700">📐 Salary Model Parameters</h2>
+
+    <!-- Career Gamma description + inputs -->
+    <template x-if="salaryParams && salaryParams.model === 'careerGamma'">
+      <div>
+        <p class="text-xs text-gray-400 mb-4">
+          Adjust the fitted Career Gamma curve and click <strong>Apply</strong> to regenerate all salary predictions.
+          Model: <code class="bg-gray-100 px-1 rounded">f(x) = a * x^k * exp(-b*x) + c</code>
+          where <em>x</em> = years of experience (1-indexed from first career year).
+        </p>
+        <div class="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-4">
+          <div>
+            <label class="block text-xs font-medium text-gray-500 mb-1">
+              a — Scale
+              <span class="block font-normal text-gray-400">income magnitude</span>
+            </label>
+            <input type="number" x-model.number="manualSalaryA" step="100" min="0"
+              class="w-full border rounded-lg px-3 py-2 text-sm" />
+          </div>
+          <div>
+            <label class="block text-xs font-medium text-gray-500 mb-1">
+              k — Growth
+              <span class="block font-normal text-gray-400">early-career climb</span>
+            </label>
+            <input type="number" x-model.number="manualSalaryK" step="0.05" min="0.1" max="10"
+              class="w-full border rounded-lg px-3 py-2 text-sm" />
+          </div>
+          <div>
+            <label class="block text-xs font-medium text-gray-500 mb-1">
+              b — Decay
+              <span class="block font-normal text-gray-400">late-career decline</span>
+            </label>
+            <input type="number" x-model.number="manualSalaryB" step="0.001" min="0.001" max="1"
+              class="w-full border rounded-lg px-3 py-2 text-sm" />
+          </div>
+          <div>
+            <label class="block text-xs font-medium text-gray-500 mb-1">
+              c — Floor ($)
+              <span class="block font-normal text-gray-400">base salary minimum</span>
+            </label>
+            <input type="number" x-model.number="manualSalaryC" step="100"
+              class="w-full border rounded-lg px-3 py-2 text-sm" />
+          </div>
+        </div>
+        <p class="mb-4 text-xs text-gray-400">
+          Tip: raise <strong>a</strong> for a higher peak, lower <strong>b</strong> for a slower decline, raise <strong>c</strong> for a higher late-career floor.
+          Peak occurs at <em>x</em> = k/b years of experience.
+        </p>
+      </div>
+    </template>
+
+    <!-- Logistic description + inputs -->
+    <template x-if="salaryParams && salaryParams.model !== 'careerGamma'">
+      <div>
+        <p class="text-xs text-gray-400 mb-4">
+          Adjust the fitted logistic curve and click <strong>Apply</strong> to regenerate all salary predictions.
+          Model: <code class="bg-gray-100 px-1 rounded">f(year) = L · σ(k · (year − minYear − m))</code>
+        </p>
+        <div class="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-4">
+          <div>
+            <label class="block text-xs font-medium text-gray-500 mb-1">
+              L — Salary Ceiling ($)
+              <span class="font-normal text-gray-400 ml-1">max attainable salary</span>
+            </label>
+            <input type="number" x-model.number="manualSalaryL" step="1000" min="1"
+              class="w-full border rounded-lg px-3 py-2 text-sm" />
+          </div>
+          <div>
+            <label class="block text-xs font-medium text-gray-500 mb-1">
+              k — Steepness (per year)
+              <span class="font-normal text-gray-400 ml-1">higher = faster growth</span>
+            </label>
+            <input type="number" x-model.number="manualSalaryK" step="0.001" min="0.001" max="2"
+              class="w-full border rounded-lg px-3 py-2 text-sm" />
+          </div>
+          <div>
+            <label class="block text-xs font-medium text-gray-500 mb-1">
+              m — Inflection Offset (years)
+              <span class="font-normal text-gray-400 ml-1">years from first data year</span>
+            </label>
+            <input type="number" x-model.number="manualSalaryM" step="0.5"
+              class="w-full border rounded-lg px-3 py-2 text-sm" />
+          </div>
+        </div>
+        <p class="mb-4 text-xs text-gray-400">
+          Tip: increase <strong>L</strong> for a higher salary ceiling, lower <strong>k</strong> for a slower growth curve,
+          or push <strong>m</strong> further out to delay the inflection point.
+        </p>
+      </div>
+    </template>
+
+    <button
+      @click="reapplySalaryParams()"
+      class="inline-flex items-center gap-2 bg-indigo-500 hover:bg-indigo-600 active:scale-95 text-white font-semibold px-6 py-2 rounded-lg shadow transition"
+    >
+      ✅ Apply Parameters
+    </button>
+  </section>
+
+  <!-- ═══════════════════════════════════════════════════════════════════════ -->
+  <!--  § 3c  Cost Model Parameter Overrides (shown after first fit)          -->
+  <!-- ═══════════════════════════════════════════════════════════════════════ -->
+  <section x-show="costParams" x-cloak class="bg-white rounded-xl shadow p-6 mb-6">
+    <h2 class="text-lg font-semibold mb-1 text-gray-700">💸 Cost Model Parameters</h2>
+
+    <!-- Fixed Save Rate -->
+    <template x-if="costParams && costParams.model === 'fixedSaveRate'">
+      <div>
+        <p class="text-xs text-gray-400 mb-4">
+          Adjust the average <strong>save rate</strong> and click <strong>Apply</strong> to regenerate all cost predictions.
+          Model: <code class="bg-gray-100 px-1 rounded">costs = salary × (1 − save rate)</code>
+        </p>
+        <div class="flex items-center gap-4 mb-4">
+          <div class="w-48">
+            <label class="block text-xs font-medium text-gray-500 mb-1">
+              Save Rate (%)
+              <span class="block font-normal text-gray-400">share of salary saved each year</span>
+            </label>
+            <input type="number" x-model.number="manualSaveRate" step="0.1" min="0" max="100"
+              class="w-full border rounded-lg px-3 py-2 text-sm" />
+          </div>
+        </div>
+      </div>
+    </template>
+
+    <!-- Inflation + Linear -->
+    <template x-if="costParams && costParams.model === 'inflationLinear'">
+      <div>
+        <p class="text-xs text-gray-400 mb-4">
+          Adjust the inflation model and click <strong>Apply</strong> to regenerate all cost predictions.
+          Model: <code class="bg-gray-100 px-1 rounded">costs(t) = base × (1+r)^dt + slope × dt</code>
+        </p>
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
+          <div>
+            <label class="block text-xs font-medium text-gray-500 mb-1">
+              Annual Inflation Rate (%)
+              <span class="block font-normal text-gray-400">compound cost growth per year</span>
+            </label>
+            <input type="number" x-model.number="manualInflationRate" step="0.1" min="-20" max="50"
+              class="w-full border rounded-lg px-3 py-2 text-sm" />
+          </div>
+          <div>
+            <label class="block text-xs font-medium text-gray-500 mb-1">
+              Linear Slope ($/year)
+              <span class="block font-normal text-gray-400">additional linear drift on top of inflation</span>
+            </label>
+            <input type="number" x-model.number="manualInflationSlope" step="100"
+              class="w-full border rounded-lg px-3 py-2 text-sm" />
+          </div>
+        </div>
+      </div>
+    </template>
+
+    <!-- Bell Curve -->
+    <template x-if="costParams && costParams.model === 'bellCurve'">
+      <div>
+        <p class="text-xs text-gray-400 mb-4">
+          Adjust the bell curve and click <strong>Apply</strong> to regenerate all cost predictions.
+          Model: <code class="bg-gray-100 px-1 rounded">costs(t) = amplitude × exp(−(t−peak)²/(2σ²)) + base</code>
+        </p>
+        <div class="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-4">
+          <div>
+            <label class="block text-xs font-medium text-gray-500 mb-1">
+              Amplitude ($)
+              <span class="block font-normal text-gray-400">peak excess above base</span>
+            </label>
+            <input type="number" x-model.number="manualBellAmplitude" step="500" min="0"
+              class="w-full border rounded-lg px-3 py-2 text-sm" />
+          </div>
+          <div>
+            <label class="block text-xs font-medium text-gray-500 mb-1">
+              Peak Year
+              <span class="block font-normal text-gray-400">year of maximum costs</span>
+            </label>
+            <input type="number" x-model.number="manualBellPeakYear" step="1"
+              class="w-full border rounded-lg px-3 py-2 text-sm" />
+          </div>
+          <div>
+            <label class="block text-xs font-medium text-gray-500 mb-1">
+              Sigma σ (years)
+              <span class="block font-normal text-gray-400">width of cost peak</span>
+            </label>
+            <input type="number" x-model.number="manualBellSigma" step="0.5" min="0.5"
+              class="w-full border rounded-lg px-3 py-2 text-sm" />
+          </div>
+          <div>
+            <label class="block text-xs font-medium text-gray-500 mb-1">
+              Base Floor ($)
+              <span class="block font-normal text-gray-400">minimum cost level</span>
+            </label>
+            <input type="number" x-model.number="manualBellBase" step="500" min="0"
+              class="w-full border rounded-lg px-3 py-2 text-sm" />
+          </div>
+        </div>
+      </div>
+    </template>
+
+    <button
+      @click="reapplyCostParams()"
+      class="inline-flex items-center gap-2 bg-indigo-500 hover:bg-indigo-600 active:scale-95 text-white font-semibold px-6 py-2 rounded-lg shadow transition"
+    >
+      ✅ Apply Cost Parameters
+    </button>
+  </section>
+
+  <!-- ═══════════════════════════════════════════════════════════════════════ -->
+  <!--  § 3d  Return Model Parameter Overrides (shown after first fit)        -->
+  <!-- ═══════════════════════════════════════════════════════════════════════ -->
+  <section x-show="returnParams" x-cloak class="bg-white rounded-xl shadow p-6 mb-6">
+    <h2 class="text-lg font-semibold mb-1 text-gray-700">📈 Return Model Parameters</h2>
+    <p class="text-xs text-gray-400 mb-4"
+       x-text="returnParams && returnParams.model === 'ma3'
+         ? 'The 3-year moving average return rate was computed from your historical data. Adjust it here and click Apply.'
+         : 'Adjust the fixed annual return rate and click Apply.'">
+    </p>
+    <div class="flex items-center gap-4 mb-4">
+      <div class="w-48">
+        <label class="block text-xs font-medium text-gray-500 mb-1">
+          Annual Return Rate (%)
+          <span class="block font-normal text-gray-400">
+            <span x-text="returnParams && returnParams.model === 'ma3' ? 'computed 3-yr avg · editable' : 'user-specified rate'"></span>
+          </span>
+        </label>
+        <input type="number" x-model.number="manualReturnRate" step="0.1" min="-50" max="100"
+          class="w-full border rounded-lg px-3 py-2 text-sm" />
+      </div>
+    </div>
+    <button
+      @click="reapplyReturnParams()"
+      class="inline-flex items-center gap-2 bg-indigo-500 hover:bg-indigo-600 active:scale-95 text-white font-semibold px-6 py-2 rounded-lg shadow transition"
+    >
+      ✅ Apply Return Rate
+    </button>
+  </section>
+
+  <!-- ═══════════════════════════════════════════════════════════════════════ -->
+  <!--  § 5  Charts + Edit Panel (shown after first run)                      -->
+  <!-- ═══════════════════════════════════════════════════════════════════════ -->
+
+  <!-- Placeholder when no results yet -->
+  <div x-show="!hasResults" x-cloak
+       class="bg-white rounded-xl shadow p-16 text-center text-gray-400 mb-6">
+    <p class="text-5xl mb-4">📈</p>
+    <p class="text-lg">Click <strong>Auto-Fit &amp; Predict</strong> to see your FIRE projection.</p>
+  </div>
+
+  <!-- Results area -->
+  <div x-show="hasResults" x-cloak>
+
+    <!-- Main Chart + Edit Panel side by side -->
+    <div class="flex flex-col lg:flex-row gap-6 mb-6">
+
+      <!-- Main Chart -->
+      <div class="flex-1 bg-white rounded-xl shadow p-4 min-w-0">
+        <h3 class="text-sm font-semibold text-gray-500 mb-2 uppercase tracking-wide">
+          Salary / Costs / Capital Income / Net Worth
+          <span class="font-normal normal-case text-gray-400 ml-1">
+            (solid = historical · dashed = predicted)
+          </span>
+        </h3>
+        <canvas id="mainChart"></canvas>
+      </div>
+
+      <!-- Edit Panel -->
+      <div class="w-full lg:w-72 bg-white rounded-xl shadow p-5 flex-shrink-0">
+        <h3 class="text-base font-semibold text-gray-700 mb-4">✏️ Edit Year</h3>
+
+        <!-- Year selector -->
+        <div class="mb-4">
+          <label class="block text-xs font-medium text-gray-500 mb-1">Select Year</label>
+          <select
+            @change="selectYear($event.target.value)"
+            class="w-full border rounded-lg px-3 py-2 text-sm bg-white"
+          >
+            <option value="">— select a year —</option>
+            <template x-for="r in simulationResults" :key="r.year">
+              <option :value="r.year" x-text="r.year + (r.isHistorical ? ' 📌' : ' ✏️')"></option>
+            </template>
+          </select>
+        </div>
+
+        <!-- Edit fields (only when a year is selected) -->
+        <template x-if="editData">
+          <div>
+            <!-- Status badge -->
+            <div class="mb-3">
+              <span
+                class="inline-block text-xs font-medium px-2 py-1 rounded-full"
+                :class="editData.isHistorical
+                  ? 'bg-gray-100 text-gray-500'
+                  : 'bg-green-100 text-green-700'"
+                x-text="editData.isHistorical ? '📌 Historical — read-only' : '✏️ Predicted — editable'"
+              ></span>
+            </div>
+
+            <div class="space-y-3">
+
+              <div>
+                <label class="block text-xs font-medium text-gray-500 mb-1">Salary ($)</label>
+                <input
+                  type="number"
+                  x-model.number="editData.salary"
+                  :disabled="editData.isHistorical"
+                  @input="updateEditData()"
+                  class="w-full border rounded-lg px-3 py-2 text-sm transition"
+                  :class="editData.isHistorical ? 'bg-gray-50 text-gray-400 cursor-not-allowed' : ''"
+                />
+              </div>
+
+              <div>
+                <label class="block text-xs font-medium text-gray-500 mb-1">Costs ($)</label>
+                <input
+                  type="number"
+                  x-model.number="editData.costs"
+                  :disabled="editData.isHistorical"
+                  @input="updateEditData()"
+                  class="w-full border rounded-lg px-3 py-2 text-sm transition"
+                  :class="editData.isHistorical ? 'bg-gray-50 text-gray-400 cursor-not-allowed' : ''"
+                />
+              </div>
+
+              <div>
+                <label class="block text-xs font-medium text-gray-500 mb-1">Return Rate (%)</label>
+                <input
+                  type="number"
+                  x-model.number="editData.returnRate"
+                  step="0.1"
+                  :disabled="editData.isHistorical"
+                  @input="updateEditData()"
+                  class="w-full border rounded-lg px-3 py-2 text-sm transition"
+                  :class="editData.isHistorical ? 'bg-gray-50 text-gray-400 cursor-not-allowed' : ''"
+                />
+              </div>
+
+              <div>
+                <label class="block text-xs font-medium text-gray-500 mb-1">Extra Asset Δ ($)</label>
+                <input
+                  type="number"
+                  x-model.number="editData.assetChanges"
+                  :disabled="editData.isHistorical"
+                  @input="updateEditData()"
+                  class="w-full border rounded-lg px-3 py-2 text-sm transition"
+                  :class="editData.isHistorical ? 'bg-gray-50 text-gray-400 cursor-not-allowed' : ''"
+                />
+              </div>
+
+              <!-- Computed net worth (always read-only) -->
+              <div class="pt-2 border-t">
+                <label class="block text-xs font-medium text-gray-500 mb-1">
+                  Net Worth (end of year)
+                </label>
+                <div
+                  class="w-full bg-indigo-50 border border-indigo-100 rounded-lg px-3 py-2 text-sm font-medium text-indigo-700"
+                  x-text="'$' + formatNumber(editData.assets)"
+                ></div>
+              </div>
+
+              <!-- Capital income this year (computed, read-only) -->
+              <div>
+                <label class="block text-xs font-medium text-gray-500 mb-1">
+                  Capital Income (this year)
+                </label>
+                <div
+                  class="w-full bg-teal-50 border border-teal-100 rounded-lg px-3 py-2 text-sm font-medium text-teal-700"
+                  x-text="'$' + formatNumber(editData.capitalIncome)"
+                ></div>
+              </div>
+
+            </div>
+          </div>
+        </template>
+
+        <!-- Placeholder when no year selected -->
+        <template x-if="!editData">
+          <p class="text-xs text-gray-400 italic">Select a year above to inspect or edit its values.</p>
+        </template>
+      </div>
+    </div>
+
+    <!-- ═══════════════════════════════════════════════════════════════════ -->
+    <!--  § 6  Coverage Chart                                               -->
+    <!-- ═══════════════════════════════════════════════════════════════════ -->
+    <div class="bg-white rounded-xl shadow p-4 mb-6">
+      <h3 class="text-sm font-semibold text-gray-500 mb-2 uppercase tracking-wide">
+        Two-Phase FIRE Coverage
+        <span class="font-normal normal-case text-gray-400 ml-1">
+          (≥ 1× = threshold reached · <span class="text-green-500">green</span> = Phase 1 · <span class="text-purple-500">purple</span> = Phase 2)
+        </span>
+      </h3>
+      <canvas id="coverageChart"></canvas>
+    </div>
+
+    <!-- ═══════════════════════════════════════════════════════════════════ -->
+    <!--  § 7  Metrics Cards (Two-Phase FIRE)                               -->
+    <!-- ═══════════════════════════════════════════════════════════════════ -->
+
+    <!-- Phase labels legend -->
+    <div class="mb-3 flex gap-6 text-xs text-gray-500">
+      <span class="flex items-center gap-1">
+        <span class="inline-block w-3 h-3 rounded-full bg-green-400"></span>
+        <strong>Phase 1</strong> — Capital income covers <em>costs</em>
+      </span>
+      <span class="flex items-center gap-1">
+        <span class="inline-block w-3 h-3 rounded-full bg-purple-500"></span>
+        <strong>Phase 2</strong> — Capital income equals <em>salary</em>
+      </span>
+    </div>
+
+    <div class="grid grid-cols-2 sm:grid-cols-3 gap-4">
+
+      <!-- Phase 1 FIRE Year -->
+      <div class="bg-white rounded-xl shadow p-5 text-center border-t-4 border-green-400">
+        <p class="text-xs font-medium text-gray-500 uppercase tracking-wide mb-1">Phase 1 FIRE Year</p>
+        <p
+          class="text-3xl font-extrabold"
+          :class="firePhase1Year ? 'text-green-500' : 'text-gray-400'"
+          x-text="firePhase1Year || '—'"
+        ></p>
+        <p class="text-xs text-gray-400 mt-1" x-text="'in ' + yearsToPhase1 + (yearsToPhase1 === '∞' || yearsToPhase1 === 'Now!' ? '' : ' yrs')"></p>
+      </div>
+
+      <!-- Phase 2 FIRE Year -->
+      <div class="bg-white rounded-xl shadow p-5 text-center border-t-4 border-purple-500">
+        <p class="text-xs font-medium text-gray-500 uppercase tracking-wide mb-1">Phase 2 FIRE Year</p>
+        <p
+          class="text-3xl font-extrabold"
+          :class="firePhase2Year ? 'text-purple-500' : 'text-gray-400'"
+          x-text="firePhase2Year || '—'"
+        ></p>
+        <p class="text-xs text-gray-400 mt-1" x-text="'in ' + yearsToPhase2 + (yearsToPhase2 === '∞' || yearsToPhase2 === 'Now!' ? '' : ' yrs')"></p>
+      </div>
+
+      <!-- Final Net Worth -->
+      <div class="bg-white rounded-xl shadow p-5 text-center border-t-4 border-indigo-400">
+        <p class="text-xs font-medium text-gray-500 uppercase tracking-wide mb-1">Final Net Worth</p>
+        <p class="text-3xl font-extrabold text-gray-700" x-text="'$' + formatNumber(finalAssets)"></p>
+      </div>
+
+      <!-- Phase 1 Coverage -->
+      <div class="bg-white rounded-xl shadow p-5 text-center">
+        <p class="text-xs font-medium text-gray-500 uppercase tracking-wide mb-1">Final Phase 1 Coverage</p>
+        <p
+          class="text-3xl font-extrabold"
+          :class="finalPhase1Cover >= 1 ? 'text-green-500' : 'text-red-400'"
+          x-text="finalPhase1Cover.toFixed(2) + '×'"
+        ></p>
+        <p class="text-xs text-gray-400 mt-1">income / costs</p>
+      </div>
+
+      <!-- Phase 2 Coverage -->
+      <div class="bg-white rounded-xl shadow p-5 text-center">
+        <p class="text-xs font-medium text-gray-500 uppercase tracking-wide mb-1">Final Phase 2 Coverage</p>
+        <p
+          class="text-3xl font-extrabold"
+          :class="finalPhase2Cover >= 1 ? 'text-purple-500' : 'text-red-400'"
+          x-text="finalPhase2Cover.toFixed(2) + '×'"
+        ></p>
+        <p class="text-xs text-gray-400 mt-1">income / salary</p>
+      </div>
+
+    </div>
+
+  </div><!-- /hasResults -->
+
+  <!-- Footer -->
+  <footer class="mt-12 text-center text-xs text-gray-400">
+    Built with Alpine.js · Chart.js · Tailwind CSS &nbsp;|&nbsp; Data stays in your browser.
+  </footer>
+
+</div><!-- /x-data -->
+
+</body>
+</html>
