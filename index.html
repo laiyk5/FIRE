@@ -278,6 +278,19 @@
   </section>
 
   <!-- ═══════════════════════════════════════════════════════════════════════ -->
+  <!--  § 4  Auto-Fit & Predict Button  (right after Fit Options)             -->
+  <!-- ═══════════════════════════════════════════════════════════════════════ -->
+  <div class="text-center mb-6">
+    <button
+      @click="autoFitAndPredict()"
+      class="inline-flex items-center gap-2 bg-green-500 hover:bg-green-600 active:scale-95 text-white font-semibold text-lg px-10 py-3 rounded-xl shadow-lg transition"
+    >
+      🚀 Auto-Fit &amp; Predict
+    </button>
+    <p class="mt-2 text-xs text-gray-400">Runs the models with the options above, then shows parameter panels below where you can fine-tune.</p>
+  </div>
+
+  <!-- ═══════════════════════════════════════════════════════════════════════ -->
   <!--  § 3b  Salary Model Parameter Overrides (shown after first fit)        -->
   <!-- ═══════════════════════════════════════════════════════════════════════ -->
   <section x-show="salaryParams" x-cloak class="bg-white rounded-xl shadow p-6 mb-6">
@@ -381,16 +394,140 @@
   </section>
 
   <!-- ═══════════════════════════════════════════════════════════════════════ -->
-  <!--  § 4  Auto-Fit & Predict Button                                        -->
+  <!--  § 3c  Cost Model Parameter Overrides (shown after first fit)          -->
   <!-- ═══════════════════════════════════════════════════════════════════════ -->
-  <div class="text-center mb-8">
+  <section x-show="costParams" x-cloak class="bg-white rounded-xl shadow p-6 mb-6">
+    <h2 class="text-lg font-semibold mb-1 text-gray-700">💸 Cost Model Parameters</h2>
+
+    <!-- Fixed Save Rate -->
+    <template x-if="costParams && costParams.model === 'fixedSaveRate'">
+      <div>
+        <p class="text-xs text-gray-400 mb-4">
+          Adjust the average <strong>save rate</strong> and click <strong>Apply</strong> to regenerate all cost predictions.
+          Model: <code class="bg-gray-100 px-1 rounded">costs = salary × (1 − save rate)</code>
+        </p>
+        <div class="flex items-center gap-4 mb-4">
+          <div class="w-48">
+            <label class="block text-xs font-medium text-gray-500 mb-1">
+              Save Rate (%)
+              <span class="block font-normal text-gray-400">share of salary saved each year</span>
+            </label>
+            <input type="number" x-model.number="manualSaveRate" step="0.1" min="0" max="100"
+              class="w-full border rounded-lg px-3 py-2 text-sm" />
+          </div>
+        </div>
+      </div>
+    </template>
+
+    <!-- Inflation + Linear -->
+    <template x-if="costParams && costParams.model === 'inflationLinear'">
+      <div>
+        <p class="text-xs text-gray-400 mb-4">
+          Adjust the inflation model and click <strong>Apply</strong> to regenerate all cost predictions.
+          Model: <code class="bg-gray-100 px-1 rounded">costs(t) = base × (1+r)^dt + slope × dt</code>
+        </p>
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
+          <div>
+            <label class="block text-xs font-medium text-gray-500 mb-1">
+              Annual Inflation Rate (%)
+              <span class="block font-normal text-gray-400">compound cost growth per year</span>
+            </label>
+            <input type="number" x-model.number="manualInflationRate" step="0.1" min="-20" max="50"
+              class="w-full border rounded-lg px-3 py-2 text-sm" />
+          </div>
+          <div>
+            <label class="block text-xs font-medium text-gray-500 mb-1">
+              Linear Slope ($/year)
+              <span class="block font-normal text-gray-400">additional linear drift on top of inflation</span>
+            </label>
+            <input type="number" x-model.number="manualInflationSlope" step="100"
+              class="w-full border rounded-lg px-3 py-2 text-sm" />
+          </div>
+        </div>
+      </div>
+    </template>
+
+    <!-- Bell Curve -->
+    <template x-if="costParams && costParams.model === 'bellCurve'">
+      <div>
+        <p class="text-xs text-gray-400 mb-4">
+          Adjust the bell curve and click <strong>Apply</strong> to regenerate all cost predictions.
+          Model: <code class="bg-gray-100 px-1 rounded">costs(t) = amplitude × exp(−(t−peak)²/(2σ²)) + base</code>
+        </p>
+        <div class="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-4">
+          <div>
+            <label class="block text-xs font-medium text-gray-500 mb-1">
+              Amplitude ($)
+              <span class="block font-normal text-gray-400">peak excess above base</span>
+            </label>
+            <input type="number" x-model.number="manualBellAmplitude" step="500" min="0"
+              class="w-full border rounded-lg px-3 py-2 text-sm" />
+          </div>
+          <div>
+            <label class="block text-xs font-medium text-gray-500 mb-1">
+              Peak Year
+              <span class="block font-normal text-gray-400">year of maximum costs</span>
+            </label>
+            <input type="number" x-model.number="manualBellPeakYear" step="1"
+              class="w-full border rounded-lg px-3 py-2 text-sm" />
+          </div>
+          <div>
+            <label class="block text-xs font-medium text-gray-500 mb-1">
+              Sigma σ (years)
+              <span class="block font-normal text-gray-400">width of cost peak</span>
+            </label>
+            <input type="number" x-model.number="manualBellSigma" step="0.5" min="0.5"
+              class="w-full border rounded-lg px-3 py-2 text-sm" />
+          </div>
+          <div>
+            <label class="block text-xs font-medium text-gray-500 mb-1">
+              Base Floor ($)
+              <span class="block font-normal text-gray-400">minimum cost level</span>
+            </label>
+            <input type="number" x-model.number="manualBellBase" step="500" min="0"
+              class="w-full border rounded-lg px-3 py-2 text-sm" />
+          </div>
+        </div>
+      </div>
+    </template>
+
     <button
-      @click="autoFitAndPredict()"
-      class="inline-flex items-center gap-2 bg-green-500 hover:bg-green-600 active:scale-95 text-white font-semibold text-lg px-10 py-3 rounded-xl shadow-lg transition"
+      @click="reapplyCostParams()"
+      class="inline-flex items-center gap-2 bg-indigo-500 hover:bg-indigo-600 active:scale-95 text-white font-semibold px-6 py-2 rounded-lg shadow transition"
     >
-      🚀 Auto-Fit &amp; Predict
+      ✅ Apply Cost Parameters
     </button>
-  </div>
+  </section>
+
+  <!-- ═══════════════════════════════════════════════════════════════════════ -->
+  <!--  § 3d  Return Model Parameter Overrides (shown after first fit)        -->
+  <!-- ═══════════════════════════════════════════════════════════════════════ -->
+  <section x-show="returnParams" x-cloak class="bg-white rounded-xl shadow p-6 mb-6">
+    <h2 class="text-lg font-semibold mb-1 text-gray-700">📈 Return Model Parameters</h2>
+    <p class="text-xs text-gray-400 mb-4"
+       x-text="returnParams && returnParams.model === 'ma3'
+         ? 'The 3-year moving average return rate was computed from your historical data. Adjust it here and click Apply.'
+         : 'Adjust the fixed annual return rate and click Apply.'">
+    </p>
+    <div class="flex items-center gap-4 mb-4">
+      <div class="w-48">
+        <label class="block text-xs font-medium text-gray-500 mb-1">
+          Annual Return Rate (%)
+          <span class="block font-normal text-gray-400">
+            <span x-text="returnParams && returnParams.model === 'ma3' ? 'computed 3-yr avg · editable' : 'user-specified rate'"></span>
+          </span>
+        </label>
+        <input type="number" x-model.number="manualReturnRate" step="0.1" min="-50" max="100"
+          class="w-full border rounded-lg px-3 py-2 text-sm" />
+      </div>
+    </div>
+    <button
+      @click="reapplyReturnParams()"
+      class="inline-flex items-center gap-2 bg-indigo-500 hover:bg-indigo-600 active:scale-95 text-white font-semibold px-6 py-2 rounded-lg shadow transition"
+    >
+      ✅ Apply Return Rate
+    </button>
+  </section>
 
   <!-- ═══════════════════════════════════════════════════════════════════════ -->
   <!--  § 5  Charts + Edit Panel (shown after first run)                      -->

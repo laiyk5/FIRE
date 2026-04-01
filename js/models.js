@@ -9,6 +9,9 @@ const Models = (() => {
   // Helpers
   // ────────────────────────────────────────────────────────────────────────────
 
+  /** Default annual inflation rate used when the data span is too small to estimate one. */
+  const DEFAULT_INFLATION_RATE = 0.03;
+
   /** Logistic sigmoid σ(z) = 1 / (1 + e^{-z}) */
   function sigmoid(z) {
     // Clamp to avoid Infinity from very large |z|
@@ -363,10 +366,15 @@ const Models = (() => {
    * save_rate is estimated as mean(1 − costs_i / salary_i) over historical data.
    */
   function fitFixedSaveRate(years, salaries, costs) {
-    if (salaries.length === 0) return () => 0;
+    if (salaries.length === 0) {
+      return { predict: () => 0, params: { model: 'fixedSaveRate', saveRate: 0 } };
+    }
     const rates = salaries.map((s, i) => (s > 0 ? 1 - costs[i] / s : 0));
     const avgSaveRate = rates.reduce((a, b) => a + b, 0) / rates.length;
-    return (_year, salary) => Math.max(0, salary * (1 - avgSaveRate));
+    return {
+      predict: (_year, salary) => Math.max(0, salary * (1 - avgSaveRate)),
+      params:  { model: 'fixedSaveRate', saveRate: avgSaveRate },
+    };
   }
 
   /**
@@ -374,8 +382,12 @@ const Models = (() => {
    * r is estimated from compound growth; slope from residuals.
    */
   function fitInflationLinear(years, costs) {
-    if (years.length === 0) return () => 0;
-    if (years.length === 1) return () => costs[0];
+    if (years.length === 0) {
+      return { predict: () => 0, params: { model: 'inflationLinear', base: 0, annualRate: DEFAULT_INFLATION_RATE, slope: 0, t0: 0 } };
+    }
+    if (years.length === 1) {
+      return { predict: () => costs[0], params: { model: 'inflationLinear', base: costs[0], annualRate: DEFAULT_INFLATION_RATE, slope: 0, t0: years[0] } };
+    }
 
     const t0 = years[0];
     const base = costs[0] || 1;
@@ -383,7 +395,7 @@ const Models = (() => {
 
     const annualRate = dtEnd > 0 && base > 0
       ? Math.pow(costs[costs.length - 1] / base, 1 / dtEnd) - 1
-      : 0.03;
+      : DEFAULT_INFLATION_RATE;
 
     // Linear residual slope
     let numSlope = 0, denSlope = 0;
@@ -396,9 +408,12 @@ const Models = (() => {
     }
     const slope = denSlope > 0 ? numSlope / denSlope : 0;
 
-    return (year) => {
-      const dt = year - t0;
-      return Math.max(0, base * Math.pow(1 + annualRate, dt) + slope * dt);
+    return {
+      predict: (year) => {
+        const dt = year - t0;
+        return Math.max(0, base * Math.pow(1 + annualRate, dt) + slope * dt);
+      },
+      params: { model: 'inflationLinear', base, annualRate, slope, t0 },
     };
   }
 
@@ -407,8 +422,12 @@ const Models = (() => {
    * Useful for costs that peak in middle age.
    */
   function fitBellCurve(years, costs) {
-    if (years.length === 0) return () => 0;
-    if (years.length === 1) return () => costs[0];
+    if (years.length === 0) {
+      return { predict: () => 0, params: { model: 'bellCurve', amplitude: 0, peakYear: 0, sigma: 5, base: 0 } };
+    }
+    if (years.length === 1) {
+      return { predict: () => costs[0], params: { model: 'bellCurve', amplitude: 0, peakYear: years[0], sigma: 5, base: costs[0] } };
+    }
 
     const minCost = Math.min(...costs);
     const maxCost = Math.max(...costs);
@@ -416,12 +435,12 @@ const Models = (() => {
     const sigma = Math.max((years[years.length - 1] - years[0]) / 2, 5);
     const amplitude = maxCost - minCost;
 
-    return (year) => {
-      const diff = year - peakYear;
-      return Math.max(
-        0,
-        amplitude * Math.exp(-(diff * diff) / (2 * sigma * sigma)) + minCost
-      );
+    return {
+      predict: (year) => {
+        const diff = year - peakYear;
+        return Math.max(0, amplitude * Math.exp(-(diff * diff) / (2 * sigma * sigma)) + minCost);
+      },
+      params: { model: 'bellCurve', amplitude, peakYear, sigma, base: minCost },
     };
   }
 
@@ -435,14 +454,20 @@ const Models = (() => {
   function fitMA3(_years, returnRates) {
     const lastN = returnRates.slice(-3);
     const avg = lastN.reduce((a, b) => a + b, 0) / (lastN.length || 1);
-    return () => avg;
+    return {
+      predict: () => avg,
+      params:  { model: 'ma3', rate: avg },
+    };
   }
 
   /**
    * Fixed Rate: always returns the user-specified rate.
    */
   function fitFixedRate(rate) {
-    return () => rate;
+    return {
+      predict: () => rate,
+      params:  { model: 'fixedRate', rate },
+    };
   }
 
   // ────────────────────────────────────────────────────────────────────────────
@@ -474,7 +499,7 @@ const Models = (() => {
      * @param {number[]} years
      * @param {number[]} salaries
      * @param {number[]} costs
-     * @returns {(year: number, salary: number) => number}
+     * @returns {{ predict: (year: number, salary: number) => number, params: object }}
      */
     fitCosts(model, years, salaries, costs) {
       switch (model) {
@@ -493,7 +518,7 @@ const Models = (() => {
      * @param {number[]} years
      * @param {number[]} returnRates  — as decimals (e.g. 0.07 = 7 %)
      * @param {number}   fixedRate    — decimal, used when model === 'fixedRate'
-     * @returns {(year: number) => number}
+     * @returns {{ predict: (year: number) => number, params: object }}
      */
     fitReturn(model, years, returnRates, fixedRate) {
       switch (model) {
@@ -525,6 +550,42 @@ const Models = (() => {
         const t = year - minYear;
         return Math.max(0, L * sigmoid(k * (t - m)));
       };
+    },
+
+    /**
+     * Build a cost predictor from explicit cost model parameters.
+     * @param {object} params — cost params object with a 'model' field
+     * @returns {(year: number, salary: number) => number}
+     */
+    costPredictorFromParams(params) {
+      if (params.model === 'fixedSaveRate') {
+        const { saveRate } = params;
+        return (_year, salary) => Math.max(0, salary * (1 - saveRate));
+      }
+      if (params.model === 'inflationLinear') {
+        const { base, annualRate, slope, t0 } = params;
+        return (year) => {
+          const dt = year - t0;
+          return Math.max(0, base * Math.pow(1 + annualRate, dt) + slope * dt);
+        };
+      }
+      if (params.model === 'bellCurve') {
+        const { amplitude, peakYear, sigma, base } = params;
+        return (year) => {
+          const diff = year - peakYear;
+          return Math.max(0, amplitude * Math.exp(-(diff * diff) / (2 * sigma * sigma)) + base);
+        };
+      }
+      return () => 0;
+    },
+
+    /**
+     * Build a return-rate predictor from explicit return model parameters.
+     * @param {object} params — return params object with a 'model' field
+     * @returns {(year: number) => number}
+     */
+    returnPredictorFromParams(params) {
+      return () => params.rate;
     },
   };
 })();

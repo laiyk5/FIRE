@@ -37,6 +37,20 @@ function fireApp() {
     manualSalaryB:      null,   // gamma: decay rate (per exp-year)
     manualSalaryC:      null,   // gamma: salary floor ($)
 
+    // ── Fitted cost model parameters (exposed for manual override) ───────────
+    costParams:            null,  // set after autoFitAndPredict
+    manualSaveRate:        null,  // fixedSaveRate: save rate (%)
+    manualInflationRate:   null,  // inflationLinear: annual rate (%)
+    manualInflationSlope:  null,  // inflationLinear: linear slope ($/yr)
+    manualBellAmplitude:   null,  // bellCurve: amplitude ($)
+    manualBellPeakYear:    null,  // bellCurve: peak year
+    manualBellSigma:       null,  // bellCurve: half-width (years)
+    manualBellBase:        null,  // bellCurve: base cost floor ($)
+
+    // ── Fitted return model parameters (exposed for manual override) ─────────
+    returnParams:      null,  // set after autoFitAndPredict
+    manualReturnRate:  null,  // % — computed avg for ma3 or user value for fixedRate
+
     // ── Processed year entries (historical + predicted, kept mutable) ────────
     allYearsData: [],
 
@@ -134,13 +148,34 @@ function fireApp() {
         this.manualSalaryK = parseFloat(salaryParams.k.toFixed(4));
         this.manualSalaryM = parseFloat(salaryParams.m.toFixed(2));
       }
-      const costPredictor   = Models.fitCosts(this.costModel, years, salaries, costs);
-      const returnPredictor = Models.fitReturn(
+      const costResult   = Models.fitCosts(this.costModel, years, salaries, costs);
+      const returnResult = Models.fitReturn(
         this.returnModel,
         years,
         returnRates,
         this.fixedReturnRate / 100,
       );
+      const costPredictor   = costResult.predict;
+      const returnPredictor = returnResult.predict;
+
+      // Store cost params and initialise manual fields
+      this.costParams = costResult.params;
+      const cp = costResult.params;
+      if (cp.model === 'fixedSaveRate') {
+        this.manualSaveRate = this._toPercent(cp.saveRate, 2);
+      } else if (cp.model === 'inflationLinear') {
+        this.manualInflationRate  = this._toPercent(cp.annualRate, 2);
+        this.manualInflationSlope = parseFloat(cp.slope.toFixed(2));
+      } else if (cp.model === 'bellCurve') {
+        this.manualBellAmplitude = parseFloat(cp.amplitude.toFixed(2));
+        this.manualBellPeakYear  = cp.peakYear;
+        this.manualBellSigma     = parseFloat(cp.sigma.toFixed(2));
+        this.manualBellBase      = parseFloat(cp.base.toFixed(2));
+      }
+
+      // Store return params and initialise manual field
+      this.returnParams     = returnResult.params;
+      this.manualReturnRate = this._toPercent(returnResult.params.rate, 4);
 
       // ── Build allYearsData ─────────────────────────────────────────────────
       this.allYearsData = [];
@@ -295,7 +330,7 @@ function fireApp() {
 
       const predictor = Models.salaryPredictorFromParams(params);
       const histEntries = this.allYearsData.filter(d => d.isHistorical);
-      const costPredictor = Models.fitCosts(
+      const { predict: costPredictor } = Models.fitCosts(
         this.costModel,
         histEntries.map(d => d.year),
         histEntries.map(d => d.salary),
@@ -314,9 +349,93 @@ function fireApp() {
       Charts.updateHighlight(this.simulationResults, this.selectedYear);
     },
 
+    /**
+     * Rebuild all predicted costs using the manually adjusted cost model parameters,
+     * then re-run the simulation so all charts and FIRE metrics update at once.
+     */
+    reapplyCostParams() {
+      if (!this.costParams) return;
+
+      let params;
+      const cp = this.costParams;
+      if (cp.model === 'fixedSaveRate') {
+        const sr = this._parsePercentOrDefault(this.manualSaveRate, cp.saveRate);
+        params = { ...cp, saveRate: sr };
+      } else if (cp.model === 'inflationLinear') {
+        params = {
+          ...cp,
+          annualRate: this._parsePercentOrDefault(this.manualInflationRate,  cp.annualRate),
+          slope:      this._parseOrDefault(this.manualInflationSlope, cp.slope),
+        };
+      } else if (cp.model === 'bellCurve') {
+        params = {
+          ...cp,
+          amplitude: this._parseOrDefault(this.manualBellAmplitude, cp.amplitude),
+          peakYear:  this._parseOrDefault(this.manualBellPeakYear,  cp.peakYear),
+          sigma:     this._parseOrDefault(this.manualBellSigma,     cp.sigma),
+          base:      this._parseOrDefault(this.manualBellBase,      cp.base),
+        };
+      } else {
+        return;
+      }
+
+      const costPredictor = Models.costPredictorFromParams(params);
+
+      for (const entry of this.allYearsData) {
+        if (!entry.isHistorical) {
+          entry.costs = Math.round(costPredictor(entry.year, entry.salary));
+        }
+      }
+
+      this._runSimulation();
+      Charts.updateHighlight(this.simulationResults, this.selectedYear);
+    },
+
+    /**
+     * Rebuild all predicted return rates using the manually adjusted return rate,
+     * then re-run the simulation so all charts and FIRE metrics update at once.
+     */
+    reapplyReturnParams() {
+      if (!this.returnParams) return;
+
+      const rate = this._parsePercentOrDefault(this.manualReturnRate, this.returnParams.rate);
+
+      const params = { ...this.returnParams, rate };
+      const returnPredictor = Models.returnPredictorFromParams(params);
+
+      for (const entry of this.allYearsData) {
+        if (!entry.isHistorical) {
+          entry.returnRate = returnPredictor(entry.year);
+        }
+      }
+
+      this._runSimulation();
+      Charts.updateHighlight(this.simulationResults, this.selectedYear);
+    },
+
     // ────────────────────────────────────────────────────────────────────────
     // Formatting helpers
     // ────────────────────────────────────────────────────────────────────────
+
+    /** Convert a decimal fraction to a rounded percentage string (e.g. 0.075 → "7.5000"). */
+    _toPercent(value, decimals) {
+      return parseFloat((value * 100).toFixed(decimals));
+    },
+
+    /**
+     * Parse a user-entered percentage string to a decimal, falling back to the given default.
+     * e.g. parsePercentOrDefault("7.5", 0.08) → 0.075
+     */
+    _parsePercentOrDefault(str, fallback) {
+      const v = parseFloat(str);
+      return isFinite(v) ? v / 100 : fallback;
+    },
+
+    /** Parse a numeric string, falling back to the given default if invalid. */
+    _parseOrDefault(str, fallback) {
+      const v = parseFloat(str);
+      return isFinite(v) ? v : fallback;
+    },
 
     formatNumber(n) {
       if (n === null || n === undefined) return '0';
