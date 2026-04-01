@@ -21,12 +21,24 @@ const Models = (() => {
   // ────────────────────────────────────────────────────────────────────────────
 
   /**
-   * Logistic + Linear Salary Model.
+   * Logistic Salary Model fitted via Bayesian MAP estimation.
    * f(t) = L · σ(k · (t_norm − t0))
-   * where t_norm = (year − minYear) / span  →  [0, 1] over historical range,
-   * and can exceed 1 for future years (salary approaches ceiling L).
+   * where t_norm = (year − minYear) / span  ∈  [0, 1] over the observed range.
    *
-   * Fitted with gradient-descent MSE minimisation.
+   * With few observations, pure gradient descent is poorly constrained and can
+   * collapse to a flat line or diverge.  Instead we maximise the log-posterior
+   * (MAP) by adding Gaussian prior terms to the MSE objective:
+   *
+   *   -log P(θ|data) ∝ (1/n) · Σ (f_i − ŷ_i)²        ← mean likelihood (normalised)
+   *                   + λLn · (Ln  − priorLn)²          ← prior on ceiling (normalised)
+   *                   + λK  · (k   − priorK  )²         ← prior on steepness
+   *                   + λT0 · (t0  − priorT0 )²         ← prior on midpoint
+   *
+   * All variables are normalised by maxVal before optimisation so that every
+   * parameter and gradient lives at O(1) scale — a single learning rate is then
+   * safe.  Dividing the data term by n ensures the prior becomes proportionally
+   * weaker as more observations arrive: the defining property of Bayesian
+   * regularisation.
    *
    * @param {number[]} years
    * @param {number[]} salaries
@@ -39,40 +51,58 @@ const Models = (() => {
     const n = years.length;
     const minYear = years[0];
     const span = (years[n - 1] - minYear) || 1;
-    const tn = years.map(y => (y - minYear) / span); // normalised [0,1]
+    const tn = years.map(y => (y - minYear) / span); // normalised [0, 1]
 
     const maxVal = Math.max(...salaries) || 1;
 
-    // ── Initial parameter estimates ──────────────────────────────────────────
-    let L = maxVal * 1.5;   // ceiling
-    let k = 4.0;            // steepness in normalised time
-    let t0 = 0.5;           // midpoint in normalised time
+    // Normalise salaries → ŷ ∈ [0,1]; optimise Ln = L/maxVal ∈ [1,∞)
+    // This keeps all gradients at O(1), preventing step-size explosions.
+    const ys = salaries.map(s => s / maxVal);
 
-    // ── Gradient descent ─────────────────────────────────────────────────────
+    // ── Informative Bayesian priors (normalised space) ───────────────────────
+    // Prior means encode broad domain knowledge about salary trajectories.
+    const priorLn = 1.5;    // ceiling ≈ 1.5× current max (salary will grow)
+    const priorK  = 2.0;    // moderate S-curve steepness across a career
+    const priorT0 = 0.5;    // inflection point at the centre of the observed span
+
+    // Precision λ = 1/σ²: wide priors (large σ) let data pull params freely;
+    // tight priors (small σ) anchor them near the prior mean when data is sparse.
+    const λLn = 1 / (0.50 ** 2); // σLn  = 0.50 normalised units
+    const λK  = 1 / (4.00 ** 2); // σK   = 4.00 steepness units  (weak)
+    const λT0 = 1 / (1.00 ** 2); // σT0  = 1.00 span units        (weak)
+
+    // ── MAP optimisation — gradient descent on −log posterior ────────────────
+    // Initialise at the prior means so every run starts in the plausible region.
+    let Ln = priorLn, k = priorK, t0 = priorT0;
+
     const lr = 0.01;
-    for (let iter = 0; iter < 4000; iter++) {
-      let gL = 0, gk = 0, gt0 = 0;
+
+    for (let iter = 0; iter < 5000; iter++) {
+      let gLn = 0, gK = 0, gT0 = 0;
+
       for (let i = 0; i < n; i++) {
-        const t = tn[i];
-        const y = salaries[i];
-        const z = k * (t - t0);
-        const sig = sigmoid(z);
-        const f = L * sig;
-        const err = f - y;                        // residual
+        const t   = tn[i];
+        const sig = sigmoid(k * (t - t0));
+        const err = Ln * sig - ys[i];  // O(1) residual in normalised space
 
-        gL  += err * sig;
-        gk  += err * L * sig * (1 - sig) * (t - t0);
-        gt0 += err * L * sig * (1 - sig) * (-k);
+        // Likelihood gradients (data term)
+        gLn += err * sig;
+        gK  += err * Ln * sig * (1 - sig) * (t - t0);
+        gT0 += err * Ln * sig * (1 - sig) * (-k);
       }
-      L  -= lr * 2 * gL  / n;
-      k  -= lr * 2 * gk  / n;
-      t0 -= lr * 2 * gt0 / n;
 
-      // Soft constraints
-      L  = Math.max(maxVal, L);
+      // Combined MAP update: data gradient (mean) + prior gradient.
+      // The 1/n factor ensures the prior's influence shrinks as n grows.
+      Ln -= lr * (2 * gLn / n  +  2 * λLn * (Ln - priorLn));
+      k  -= lr * (2 * gK  / n  +  2 * λK  * (k  - priorK));
+      t0 -= lr * (2 * gT0 / n  +  2 * λT0 * (t0 - priorT0));
+
+      // Hard parameter constraints (domain feasibility)
+      Ln = Math.max(1.0, Ln);            // ceiling ≥ observed max
       k  = Math.max(0.01, Math.min(20, k));
     }
 
+    const L = Ln * maxVal;
     return (year) => {
       const t = (year - minYear) / span;
       return Math.max(0, L * sigmoid(k * (t - t0)));

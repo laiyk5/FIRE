@@ -188,9 +188,9 @@
       <div>
         <label class="block text-xs font-medium text-gray-500 mb-1">Salary Model</label>
         <select x-model="salaryModel" class="w-full border rounded-lg px-3 py-2 text-sm bg-white">
-          <option value="logisticLinear">Logistic + Linear (default)</option>
+          <option value="logisticLinear">Logistic + Bayesian MAP (default)</option>
         </select>
-        <p class="mt-1 text-xs text-gray-400">Salary saturates at a ceiling over time.</p>
+        <p class="mt-1 text-xs text-gray-400">Logistic sigmoid with Bayesian MAP priors — stable with few samples.</p>
       </div>
 
       <!-- Cost Model -->
