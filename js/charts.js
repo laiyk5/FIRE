@@ -2,8 +2,8 @@
  * FIRE Simulator — Chart Management
  *
  * Manages two Chart.js charts:
- *   • mainChart    — Salary / Costs / Net Worth over time
- *   • coverageChart — FIRE coverage ratio over time
+ *   • mainChart     — Salary / Costs / Capital Income / Net Worth over time
+ *   • coverageChart — Two-Phase FIRE coverage over time
  *
  * Relies on Chart.js v4 and chartjs-plugin-annotation v3 loaded globally.
  */
@@ -16,6 +16,7 @@ const Charts = (() => {
   const RED    = 'rgb(239, 68, 68)';
   const GREEN  = 'rgb(34, 197, 94)';
   const PURPLE = 'rgb(168, 85, 247)';
+  const TEAL   = 'rgb(20, 184, 166)';
 
   let mainChart     = null;
   let coverageChart = null;
@@ -74,6 +75,25 @@ const Charts = (() => {
     };
   }
 
+  /** Shared horizontal threshold line at coverage = 1× */
+  function fireLine() {
+    return {
+      type: 'line',
+      yMin: 1, yMax: 1,
+      borderColor: GREEN,
+      borderWidth: 2,
+      borderDash: [6, 3],
+      label: {
+        content: '🎯 FIRE threshold',
+        display: true,
+        position: 'end',
+        backgroundColor: 'rgba(34,197,94,0.15)',
+        color: GREEN,
+        font: { weight: 'bold' },
+      },
+    };
+  }
+
   // ── Public API ───────────────────────────────────────────────────────────────
 
   /**
@@ -90,17 +110,19 @@ const Charts = (() => {
     if (mainChart)     { mainChart.destroy();     mainChart     = null; }
     if (coverageChart) { coverageChart.destroy(); coverageChart = null; }
 
-    const histCount = results.filter(r => r.isHistorical).length;
-    const labels    = results.map(r => r.year);
-    const salaries  = results.map(r => r.salary);
-    const costs     = results.map(r => r.costs);
-    const assets    = results.map(r => r.assets);
-    const coverages = results.map(r => r.coverageRatio);
+    const histCount     = results.filter(r => r.isHistorical).length;
+    const labels        = results.map(r => r.year);
+    const salaries      = results.map(r => r.salary);
+    const costs         = results.map(r => r.costs);
+    const capitalIncomes = results.map(r => r.capitalIncome);
+    const assets        = results.map(r => r.assets);
+    const phase1        = results.map(r => r.phase1Coverage);
+    const phase2        = results.map(r => r.phase2Coverage);
 
-    const radii     = pointRadii(results, selectedYear);
-    const annots    = selectedLineAnnotation(selectedYear);
+    const radii  = pointRadii(results, selectedYear);
+    const annots = selectedLineAnnotation(selectedYear);
 
-    // ── Main chart (Salary / Costs / Net Worth) ─────────────────────────────
+    // ── Main chart (Salary / Costs / Capital Income / Net Worth) ────────────
     mainChart = new Chart(mainCtx, {
       type: 'line',
       data: {
@@ -123,6 +145,17 @@ const Charts = (() => {
             borderColor: RED,
             backgroundColor: 'rgba(239,68,68,0.05)',
             pointBackgroundColor: pointColours(results, selectedYear, RED),
+            pointRadius: radii,
+            tension: 0.3,
+            fill: false,
+            segment: segmentDash(histCount),
+          },
+          {
+            label: 'Capital Income',
+            data: capitalIncomes,
+            borderColor: TEAL,
+            backgroundColor: 'rgba(20,184,166,0.05)',
+            pointBackgroundColor: pointColours(results, selectedYear, TEAL),
             pointRadius: radii,
             tension: 0.3,
             fill: false,
@@ -169,21 +202,32 @@ const Charts = (() => {
       },
     });
 
-    // ── Coverage chart ──────────────────────────────────────────────────────
+    // ── Coverage chart (Two-Phase FIRE) ─────────────────────────────────────
     coverageChart = new Chart(coverageCtx, {
       type: 'line',
       data: {
         labels,
         datasets: [
           {
-            label: 'FIRE Coverage',
-            data: coverages,
+            label: 'Phase 1 — Income / Costs',
+            data: phase1,
+            borderColor: GREEN,
+            backgroundColor: 'rgba(34,197,94,0.08)',
+            pointBackgroundColor: pointColours(results, selectedYear, GREEN),
+            pointRadius: radii,
+            tension: 0.3,
+            fill: false,
+            segment: segmentDash(histCount),
+          },
+          {
+            label: 'Phase 2 — Income / Salary',
+            data: phase2,
             borderColor: PURPLE,
-            backgroundColor: 'rgba(168,85,247,0.1)',
+            backgroundColor: 'rgba(168,85,247,0.08)',
             pointBackgroundColor: pointColours(results, selectedYear, PURPLE),
             pointRadius: radii,
             tension: 0.3,
-            fill: true,
+            fill: false,
             segment: segmentDash(histCount),
           },
         ],
@@ -194,26 +238,12 @@ const Charts = (() => {
           annotation: {
             annotations: {
               ...annots,
-              fireLine: {
-                type: 'line',
-                yMin: 1, yMax: 1,
-                borderColor: GREEN,
-                borderWidth: 2,
-                borderDash: [6, 3],
-                label: {
-                  content: '🎯 FIRE',
-                  display: true,
-                  position: 'end',
-                  backgroundColor: 'rgba(34,197,94,0.15)',
-                  color: GREEN,
-                  font: { weight: 'bold' },
-                },
-              },
+              fireLine: fireLine(),
             },
           },
           tooltip: {
             callbacks: {
-              label: ctx => `Coverage: ${ctx.parsed.y.toFixed(2)}×`,
+              label: ctx => `${ctx.dataset.label}: ${ctx.parsed.y.toFixed(2)}×`,
             },
           },
         },
@@ -239,17 +269,20 @@ const Charts = (() => {
       return;
     }
 
-    const histCount = results.filter(r => r.isHistorical).length;
-    const labels    = results.map(r => r.year);
-    const salaries  = results.map(r => r.salary);
-    const costs     = results.map(r => r.costs);
-    const assets    = results.map(r => r.assets);
-    const coverages = results.map(r => r.coverageRatio);
-    const radii     = pointRadii(results, selectedYear);
-    const annots    = selectedLineAnnotation(selectedYear);
+    const histCount      = results.filter(r => r.isHistorical).length;
+    const labels         = results.map(r => r.year);
+    const salaries       = results.map(r => r.salary);
+    const costs          = results.map(r => r.costs);
+    const capitalIncomes = results.map(r => r.capitalIncome);
+    const assets         = results.map(r => r.assets);
+    const phase1         = results.map(r => r.phase1Coverage);
+    const phase2         = results.map(r => r.phase2Coverage);
+    const radii          = pointRadii(results, selectedYear);
+    const annots         = selectedLineAnnotation(selectedYear);
 
     // ── Update main chart ───────────────────────────────────────────────────
     mainChart.data.labels = labels;
+
     mainChart.data.datasets[0].data = salaries;
     mainChart.data.datasets[0].pointBackgroundColor = pointColours(results, selectedYear, BLUE);
     mainChart.data.datasets[0].pointRadius = radii;
@@ -260,38 +293,35 @@ const Charts = (() => {
     mainChart.data.datasets[1].pointRadius = radii;
     mainChart.data.datasets[1].segment = segmentDash(histCount);
 
-    mainChart.data.datasets[2].data = assets;
-    mainChart.data.datasets[2].pointBackgroundColor = pointColours(results, selectedYear, GREEN);
+    mainChart.data.datasets[2].data = capitalIncomes;
+    mainChart.data.datasets[2].pointBackgroundColor = pointColours(results, selectedYear, TEAL);
     mainChart.data.datasets[2].pointRadius = radii;
     mainChart.data.datasets[2].segment = segmentDash(histCount);
+
+    mainChart.data.datasets[3].data = assets;
+    mainChart.data.datasets[3].pointBackgroundColor = pointColours(results, selectedYear, GREEN);
+    mainChart.data.datasets[3].pointRadius = radii;
+    mainChart.data.datasets[3].segment = segmentDash(histCount);
 
     mainChart.options.plugins.annotation.annotations = annots;
     mainChart.update('none');
 
     // ── Update coverage chart ───────────────────────────────────────────────
     coverageChart.data.labels = labels;
-    coverageChart.data.datasets[0].data = coverages;
-    coverageChart.data.datasets[0].pointBackgroundColor = pointColours(results, selectedYear, PURPLE);
+
+    coverageChart.data.datasets[0].data = phase1;
+    coverageChart.data.datasets[0].pointBackgroundColor = pointColours(results, selectedYear, GREEN);
     coverageChart.data.datasets[0].pointRadius = radii;
     coverageChart.data.datasets[0].segment = segmentDash(histCount);
 
+    coverageChart.data.datasets[1].data = phase2;
+    coverageChart.data.datasets[1].pointBackgroundColor = pointColours(results, selectedYear, PURPLE);
+    coverageChart.data.datasets[1].pointRadius = radii;
+    coverageChart.data.datasets[1].segment = segmentDash(histCount);
+
     coverageChart.options.plugins.annotation.annotations = {
       ...annots,
-      fireLine: {
-        type: 'line',
-        yMin: 1, yMax: 1,
-        borderColor: GREEN,
-        borderWidth: 2,
-        borderDash: [6, 3],
-        label: {
-          content: '🎯 FIRE',
-          display: true,
-          position: 'end',
-          backgroundColor: 'rgba(34,197,94,0.15)',
-          color: GREEN,
-          font: { weight: 'bold' },
-        },
-      },
+      fireLine: fireLine(),
     };
     coverageChart.update('none');
   }

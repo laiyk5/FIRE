@@ -11,10 +11,9 @@
 function fireApp() {
   return {
     // ── Initial Setup ────────────────────────────────────────────────────────
-    currentYear:        new Date().getFullYear(),
-    initialAssets:      50000,
-    safeWithdrawalRate: 4,    // %
-    predictYears:       30,
+    currentYear:   new Date().getFullYear(),
+    initialAssets: 50000,
+    predictYears:  30,
 
     // ── Historical Data ──────────────────────────────────────────────────────
     historicalData: [],
@@ -36,10 +35,12 @@ function fireApp() {
     selectedYear: null,
     editData:     null,
 
-    // ── Summary metrics ──────────────────────────────────────────────────────
-    fireYear:      null,
-    finalCoverage: 0,
-    finalAssets:   0,
+    // ── Summary metrics (Two-Phase FIRE) ─────────────────────────────────────
+    firePhase1Year:    null,   // capital income ≥ costs
+    firePhase2Year:    null,   // capital income ≥ salary
+    finalPhase1Cover:  0,
+    finalPhase2Cover:  0,
+    finalAssets:       0,
 
     // ────────────────────────────────────────────────────────────────────────
     // Lifecycle
@@ -144,7 +145,7 @@ function fireApp() {
 
       // ── Simulate ───────────────────────────────────────────────────────────
       this._runSimulation();
-      this.hasResults  = true;
+      this.hasResults   = true;
       this.selectedYear = null;
       this.editData     = null;
 
@@ -161,15 +162,20 @@ function fireApp() {
       this.simulationResults = Simulator.run({
         initialAssets: parseFloat(this.initialAssets) || 0,
         yearsData:     this.allYearsData,
-        swr:           (parseFloat(this.safeWithdrawalRate) || 4) / 100,
       });
 
-      const fireResult = this.simulationResults.find(r => r.isFIRE);
-      this.fireYear = fireResult ? fireResult.year : null;
+      // Phase 1: first year where capital income ≥ costs
+      const p1 = this.simulationResults.find(r => r.isPhase1FIRE);
+      this.firePhase1Year = p1 ? p1.year : null;
+
+      // Phase 2: first year where capital income ≥ salary
+      const p2 = this.simulationResults.find(r => r.isPhase2FIRE);
+      this.firePhase2Year = p2 ? p2.year : null;
 
       const last = this.simulationResults[this.simulationResults.length - 1];
-      this.finalCoverage = last ? last.coverageRatio : 0;
-      this.finalAssets   = last ? last.assets        : 0;
+      this.finalPhase1Cover = last ? last.phase1Coverage : 0;
+      this.finalPhase2Cover = last ? last.phase2Coverage : 0;
+      this.finalAssets      = last ? last.assets         : 0;
     },
 
     // ────────────────────────────────────────────────────────────────────────
@@ -198,6 +204,7 @@ function fireApp() {
           returnRate:   parseFloat((entry.returnRate * 100).toFixed(2)),
           assetChanges: entry.assetChanges || 0,
           assets:       Math.round(result.assets),
+          capitalIncome: Math.round(result.capitalIncome),
           isHistorical: entry.isHistorical,
         };
       }
@@ -223,9 +230,12 @@ function fireApp() {
 
       this._runSimulation();
 
-      // Refresh computed assets in edit panel
+      // Refresh computed fields in edit panel
       const result = this.simulationResults.find(r => r.year === year);
-      if (result) this.editData.assets = Math.round(result.assets);
+      if (result) {
+        this.editData.assets       = Math.round(result.assets);
+        this.editData.capitalIncome = Math.round(result.capitalIncome);
+      }
 
       Charts.updateHighlight(this.simulationResults, this.selectedYear);
     },
@@ -242,9 +252,15 @@ function fireApp() {
       return Math.round(n).toString();
     },
 
-    get yearsToFIRE() {
-      if (!this.fireYear) return '∞';
-      const diff = this.fireYear - this.currentYear;
+    get yearsToPhase1() {
+      if (!this.firePhase1Year) return '∞';
+      const diff = this.firePhase1Year - this.currentYear;
+      return diff <= 0 ? 'Now!' : diff;
+    },
+
+    get yearsToPhase2() {
+      if (!this.firePhase2Year) return '∞';
+      const diff = this.firePhase2Year - this.currentYear;
       return diff <= 0 ? 'Now!' : diff;
     },
   };
