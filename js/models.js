@@ -135,7 +135,205 @@ const Models = (() => {
       const t = year - minYear;                       // calendar years from start
       return Math.max(0, L * sigmoid(k * (t - m)));
     };
-    return { predict, params: { L, k, m, minYear } };
+    return { predict, params: { model: 'logisticLinear', L, k, m, minYear } };
+  }
+
+  // ────────────────────────────────────────────────────────────────────────────
+  // CAREER GAMMA SALARY MODEL
+  // ────────────────────────────────────────────────────────────────────────────
+
+  /**
+   * China salary prior data (years of experience → salary normalized by career peak 42.5k RMB).
+   * Source: typical professional / tech salary trajectory in China.
+   */
+  const GAMMA_PRIOR_YEARS = [1, 6, 11, 18, 31];
+  const GAMMA_PRIOR_SALS  = [10 / 42.5, 20 / 42.5, 35 / 42.5, 1.0, 30 / 42.5];
+
+  /**
+   * Evaluate the Career Gamma function: f(x) = a · x^k · exp(−b·x) + c
+   * where x = years of experience (x > 0).
+   */
+  function gammaEval(x, a, k, b, c) {
+    const sx = Math.max(x, 0.001);
+    const bx = b * sx;
+    if (bx > 700) return Math.max(0, c);           // exp underflows to 0
+    const xk = Math.pow(sx, k);
+    if (!isFinite(xk)) return 1e200;               // overflow — large penalty signal
+    return a * xk * Math.exp(-bx) + c;
+  }
+
+  /**
+   * Nelder-Mead derivative-free optimizer.
+   * Minimises fn(params) starting from x0; returns best parameter vector found.
+   * @param {(p: number[]) => number} fn
+   * @param {number[]} x0
+   * @param {number} [maxIter=10000]
+   * @returns {number[]}
+   */
+  function nelderMead(fn, x0, maxIter) {
+    maxIter = maxIter || 10000;
+    const n = x0.length;
+    const tol = 1e-12;
+
+    // Build initial simplex: one vertex per dimension displaced by 5 %
+    const verts = [x0.slice()];
+    for (let i = 0; i < n; i++) {
+      const v = x0.slice();
+      v[i] += Math.abs(v[i]) > 1e-8 ? 0.05 * Math.abs(v[i]) : 0.00025;
+      verts.push(v);
+    }
+    let fvals = verts.map(v => fn(v));
+
+    for (let iter = 0; iter < maxIter; iter++) {
+      // Sort: best (lowest) first
+      const ord = fvals.map((f, i) => [f, i]).sort((a, b) => a[0] - b[0]);
+      const sv  = ord.map(o => verts[o[1]].slice());
+      const sf  = ord.map(o => fvals[o[1]]);
+
+      if (sf[n] - sf[0] < tol) break;
+
+      // Centroid of all but worst
+      const c = new Array(n).fill(0);
+      for (let i = 0; i < n; i++)
+        for (let j = 0; j < n; j++)
+          c[j] += sv[i][j] / n;
+
+      // Reflection
+      const xr = c.map((cj, j) => 2 * cj - sv[n][j]);
+      const fr  = fn(xr);
+
+      if (fr < sf[0]) {
+        // Expansion
+        const xe = c.map((cj, j) => 3 * cj - 2 * sv[n][j]);
+        const fe  = fn(xe);
+        sv[n] = fe < fr ? xe : xr;
+        sf[n] = Math.min(fe, fr);
+      } else if (fr < sf[n - 1]) {
+        sv[n] = xr; sf[n] = fr;
+      } else {
+        // Contraction
+        const useRef = fr < sf[n];
+        const xc = c.map((cj, j) => cj + 0.5 * ((useRef ? xr[j] : sv[n][j]) - cj));
+        const fc  = fn(xc);
+        if (fc < (useRef ? fr : sf[n])) {
+          sv[n] = xc; sf[n] = fc;
+        } else {
+          // Shrink toward best
+          for (let i = 1; i <= n; i++) {
+            sv[i] = sv[0].map((v, j) => v + 0.5 * (sv[i][j] - v));
+            sf[i] = fn(sv[i]);
+          }
+        }
+      }
+
+      for (let i = 0; i <= n; i++) { verts[i] = sv[i]; fvals[i] = sf[i]; }
+    }
+
+    let best = 0;
+    for (let i = 1; i <= n; i++) if (fvals[i] < fvals[best]) best = i;
+    return verts[best];
+  }
+
+  /**
+   * Career Gamma Salary Model with Bayesian regularisation against a country prior.
+   *
+   * MODEL: f(x) = a · x^k · exp(−b·x) + c
+   *   where x = years of experience (= calendarYear − minYear + 1),
+   *         a = scale (overall income magnitude),
+   *         k = growth exponent (steepness of early-career climb),
+   *         b = decay rate ("35-year crisis" / skill obsolescence),
+   *         c = salary floor (entry-level base).
+   *
+   * PRIOR: fit on China average professional salary data (normalised by career peak).
+   *
+   * POSTERIOR MAP objective:
+   *   E(p) = mean_i[(f(x_i,p) − ŷ_i)²]  +  α · Σ_j[((p_j − prior_j)/(|prior_j|+ε))²]
+   *
+   * Both China data and user data are normalised by their respective salary maxima
+   * before fitting so the shape parameters k and b are directly comparable.
+   *
+   * @param {number[]} years    — sorted historical calendar years
+   * @param {number[]} salaries — historical salaries aligned to years
+   * @param {number}   endYear  — last predicted calendar year (unused but kept for API parity)
+   * @param {number}   [alpha=0.8] — prior stiffness (0 = data only, 1 = balanced)
+   * @param {number}   [expOffset=0] — years of experience before the first data year (shifts x-axis)
+   * @returns {{ predict: (year: number) => number, params: object }}
+   */
+  function fitCareerGamma(years, salaries, endYear, alpha, expOffset) {
+    if (alpha === undefined) alpha = 0.8;
+    if (expOffset === undefined) expOffset = 0;
+
+    if (years.length === 0) {
+      return {
+        predict: () => 0,
+        params: { model: 'careerGamma', a: 0, k: 2, b: 0.1, c: 0, minYear: 0, alpha, expOffset },
+      };
+    }
+    if (years.length === 1) {
+      return {
+        predict: () => salaries[0],
+        params: { model: 'careerGamma', a: salaries[0], k: 2, b: 0.1, c: 0, minYear: years[0], alpha, expOffset },
+      };
+    }
+
+    const minYear  = years[0];
+    const maxSal   = Math.max(...salaries) || 1;
+    const normSals = salaries.map(s => s / maxSal);
+    // x = years of experience: 1 + expOffset for first data year, growing from there
+    const expYears = years.map(y => y - minYear + 1 + expOffset);
+
+    // ── Step 1: fit China prior on normalised data ────────────────────────────
+    const cFloor = Math.min(...GAMMA_PRIOR_SALS);
+    const priorObj = (p) => {
+      const [pa, pk, pb, pc] = p;
+      if (pa < 0 || pk < 0 || pb < 0) return 1e10;
+      let loss = 0;
+      for (let i = 0; i < GAMMA_PRIOR_YEARS.length; i++) {
+        const d = gammaEval(GAMMA_PRIOR_YEARS[i], pa, pk, pb, pc) - GAMMA_PRIOR_SALS[i];
+        loss += d * d;
+      }
+      return loss / GAMMA_PRIOR_YEARS.length;
+    };
+    const priorParams = nelderMead(priorObj, [0.05, 2.0, 0.1, cFloor]);
+
+    // ── Step 2: fit user posterior with Bayesian regularisation ──────────────
+    const postObj = (p) => {
+      const [pa, pk, pb, pc] = p;
+      if (pa < 0 || pk < 0 || pb < 0) return 1e10;
+
+      // Data likelihood term (normalised by n)
+      let dataLoss = 0;
+      for (let i = 0; i < expYears.length; i++) {
+        const d = gammaEval(expYears[i], pa, pk, pb, pc) - normSals[i];
+        dataLoss += d * d;
+      }
+      dataLoss /= expYears.length;
+
+      // Prior penalty (scale-invariant via normalisation by prior magnitude)
+      let penalty = 0;
+      for (let j = 0; j < 4; j++) {
+        const denom = Math.abs(priorParams[j]) + 1e-6;
+        const d = (p[j] - priorParams[j]) / denom;
+        penalty += d * d;
+      }
+
+      return dataLoss + alpha * penalty;
+    };
+    const postParams = nelderMead(postObj, priorParams.slice());
+    const [an, kn, bn, cn] = postParams;
+
+    // De-normalise salary dimensions (a and c scale with salary, k and b are shape)
+    const a = an * maxSal;
+    const k = kn;
+    const b = bn;
+    const c = cn * maxSal;
+
+    const predict = (year) => {
+      const x = year - minYear + 1 + expOffset;
+      return Math.max(0, gammaEval(x, a, k, b, c));
+    };
+
+    return { predict, params: { model: 'careerGamma', a, k, b, c, minYear, alpha, expOffset } };
   }
 
   // ────────────────────────────────────────────────────────────────────────────
@@ -234,14 +432,19 @@ const Models = (() => {
   // ────────────────────────────────────────────────────────────────────────────
   return {
     /**
-     * @param {'logisticLinear'} model
+     * @param {'logisticLinear'|'careerGamma'} model
      * @param {number[]} years
      * @param {number[]} salaries
-     * @param {number}   endYear  — last predicted year; used for full-horizon normalisation
-     * @returns {{ predict: (year: number) => number, params: { L: number, k: number, m: number, minYear: number } }}
+     * @param {number}   endYear  — last predicted year
+     * @param {object}   [options]
+     * @param {number}   [options.alpha=0.8] — prior stiffness for careerGamma
+     * @returns {{ predict: (year: number) => number, params: object }}
      */
-    fitSalary(model, years, salaries, endYear) {
+    fitSalary(model, years, salaries, endYear, options) {
+      options = options || {};
       switch (model) {
+        case 'careerGamma':
+          return fitCareerGamma(years, salaries, endYear, options.alpha, options.expOffset);
         case 'logisticLinear':
         default:
           return fitLogisticLinear(years, salaries, endYear);
@@ -285,12 +488,21 @@ const Models = (() => {
     },
 
     /**
-     * Build a salary predictor directly from explicit logistic parameters.
-     * Used when the user manually overrides L, k, or m in the UI.
-     * @param {{ L: number, k: number, m: number, minYear: number }} params
+     * Build a salary predictor directly from explicit model parameters.
+     * Dispatches on params.model to support both 'logisticLinear' and 'careerGamma'.
+     * @param {object} params
      * @returns {(year: number) => number}
      */
-    salaryPredictorFromParams({ L, k, m, minYear }) {
+    salaryPredictorFromParams(params) {
+      if (params.model === 'careerGamma') {
+        const { a, k, b, c, minYear, expOffset = 0 } = params;
+        return (year) => {
+          const x = year - minYear + 1 + expOffset;
+          return Math.max(0, gammaEval(x, a, k, b, c));
+        };
+      }
+      // logisticLinear (default)
+      const { L, k, m, minYear } = params;
       return (year) => {
         const t = year - minYear;
         return Math.max(0, L * sigmoid(k * (t - m)));

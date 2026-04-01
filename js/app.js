@@ -19,16 +19,23 @@ function fireApp() {
     historicalData: [],
 
     // ── Model Selections ─────────────────────────────────────────────────────
-    salaryModel:     'logisticLinear',
+    salaryModel:     'careerGamma',
     costModel:       'fixedSaveRate',
     returnModel:     'ma3',
     fixedReturnRate: 7,       // % — used when returnModel === 'fixedRate'
+    salaryAlpha:     0.8,     // prior stiffness for CareerGamma (0 = data only, 1 = balanced)
+    salaryExpOffset: 0,       // years of experience before first data year (CareerGamma x-axis shift)
 
     // ── Fitted salary model parameters (exposed for manual override) ─────────
-    salaryParams:       null,   // { L, k, m, minYear } set after autoFitAndPredict
-    manualSalaryL:      null,   // user-editable ceiling ($)
-    manualSalaryK:      null,   // user-editable steepness (1/yr)
-    manualSalaryM:      null,   // user-editable inflection offset (yrs from minYear)
+    salaryParams:       null,   // set after autoFitAndPredict; shape depends on model
+    // Logistic params
+    manualSalaryL:      null,   // logistic: salary ceiling ($)
+    manualSalaryK:      null,   // logistic: steepness (1/yr) | gamma: growth exponent
+    manualSalaryM:      null,   // logistic: inflection offset (yrs from minYear)
+    // Gamma params
+    manualSalaryA:      null,   // gamma: scale parameter
+    manualSalaryB:      null,   // gamma: decay rate (per exp-year)
+    manualSalaryC:      null,   // gamma: salary floor ($)
 
     // ── Processed year entries (historical + predicted, kept mutable) ────────
     allYearsData: [],
@@ -113,11 +120,20 @@ function fireApp() {
 
       // ── Fit models ────────────────────────────────────────────────────────
       const { predict: salaryPredictor, params: salaryParams } =
-        Models.fitSalary(this.salaryModel, years, salaries, endYear);
-      this.salaryParams    = salaryParams;
-      this.manualSalaryL   = Math.round(salaryParams.L);
-      this.manualSalaryK   = parseFloat(salaryParams.k.toFixed(4));
-      this.manualSalaryM   = parseFloat(salaryParams.m.toFixed(2));
+        Models.fitSalary(this.salaryModel, years, salaries, endYear, { alpha: this.salaryAlpha, expOffset: this.salaryExpOffset });
+      this.salaryParams = salaryParams;
+
+      // Initialise manual parameter fields based on which model was fitted
+      if (salaryParams.model === 'careerGamma') {
+        this.manualSalaryA = parseFloat(salaryParams.a.toFixed(2));
+        this.manualSalaryK = parseFloat(salaryParams.k.toFixed(4));
+        this.manualSalaryB = parseFloat(salaryParams.b.toFixed(4));
+        this.manualSalaryC = parseFloat(salaryParams.c.toFixed(2));
+      } else {
+        this.manualSalaryL = Math.round(salaryParams.L);
+        this.manualSalaryK = parseFloat(salaryParams.k.toFixed(4));
+        this.manualSalaryM = parseFloat(salaryParams.m.toFixed(2));
+      }
       const costPredictor   = Models.fitCosts(this.costModel, years, salaries, costs);
       const returnPredictor = Models.fitReturn(
         this.returnModel,
@@ -252,18 +268,30 @@ function fireApp() {
     },
 
     /**
-     * Rebuild all predicted salaries using the manually adjusted L/k/m parameters,
+     * Rebuild all predicted salaries using the manually adjusted model parameters,
      * then re-run the simulation so all charts and FIRE metrics update at once.
      */
     reapplySalaryParams() {
       if (!this.salaryParams) return;
 
-      const params = {
-        ...this.salaryParams,
-        L: parseFloat(this.manualSalaryL) || this.salaryParams.L,
-        k: parseFloat(this.manualSalaryK) || this.salaryParams.k,
-        m: parseFloat(this.manualSalaryM) || this.salaryParams.m,
-      };
+      let params;
+      if (this.salaryParams.model === 'careerGamma') {
+        params = {
+          ...this.salaryParams,
+          a: isFinite(parseFloat(this.manualSalaryA)) ? parseFloat(this.manualSalaryA) : this.salaryParams.a,
+          k: parseFloat(this.manualSalaryK) || this.salaryParams.k,
+          b: parseFloat(this.manualSalaryB) || this.salaryParams.b,
+          c: isFinite(parseFloat(this.manualSalaryC)) ? parseFloat(this.manualSalaryC) : this.salaryParams.c,
+        };
+      } else {
+        params = {
+          ...this.salaryParams,
+          L: parseFloat(this.manualSalaryL) || this.salaryParams.L,
+          k: parseFloat(this.manualSalaryK) || this.salaryParams.k,
+          m: parseFloat(this.manualSalaryM) || this.salaryParams.m,
+        };
+      }
+
       const predictor = Models.salaryPredictorFromParams(params);
       const histEntries = this.allYearsData.filter(d => d.isHistorical);
       const costPredictor = Models.fitCosts(
