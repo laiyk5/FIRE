@@ -22,90 +22,118 @@ const Models = (() => {
 
   /**
    * Logistic Salary Model fitted via Bayesian MAP estimation.
-   * f(t) = L · σ(k · (t_norm − t0))
-   * where t_norm = (year − minYear) / span  ∈  [0, 1] over the observed range.
    *
-   * With few observations, pure gradient descent is poorly constrained and can
-   * collapse to a flat line or diverge.  Instead we maximise the log-posterior
-   * (MAP) by adding Gaussian prior terms to the MSE objective:
+   * MODEL: f(year) = L · σ(k · (year − m))
+   *   where m = inflection year (salary growth is fastest),
+   *         L = salary ceiling,
+   *         k = steepness (per year).
    *
-   *   -log P(θ|data) ∝ (1/n) · Σ (f_i − ŷ_i)²        ← mean likelihood (normalised)
-   *                   + λLn · (Ln  − priorLn)²          ← prior on ceiling (normalised)
-   *                   + λK  · (k   − priorK  )²         ← prior on steepness
-   *                   + λT0 · (t0  − priorT0 )²         ← prior on midpoint
+   * TIME: raw calendar years (no normalisation).  Salaries are normalised by
+   * maxVal so gradients for Ln = L/maxVal stay at O(1) regardless of salary
+   * magnitude.  k is O(0.05 /year) and m is O(10 years from minYear), so each
+   * parameter gets its own learning rate.
    *
-   * All variables are normalised by maxVal before optimisation so that every
-   * parameter and gradient lives at O(1) scale — a single learning rate is then
-   * safe.  Dividing the data term by n ensures the prior becomes proportionally
-   * weaker as more observations arrive: the defining property of Bayesian
-   * regularisation.
+   * ADAPTIVE PRIORS anchored to the full projection horizon:
+   *   priorM  = 0.3 · totalSpan  (inflection 30 % through the full career arc)
+   *   priorLn = 2.5              (ceiling ≈ 2.5× current max salary)
+   *   priorK  derived analytically so that f(lastHistYear) ≈ maxSal:
+   *            sigmoid(priorK · (lastHistYear − minYear − priorM)) = 1/priorLn
+   *            → inflection is always in the future, model anchors to last data point
    *
-   * @param {number[]} years
-   * @param {number[]} salaries
+   * BAYESIAN REGULARISATION: dividing the data term by n means the prior
+   * weakens as more observations arrive — the defining property of Bayesian
+   * MAP estimation.
+   *
+   *   -log P(θ|data) ∝ (1/n)·Σ(f_i − ŷ_i)²  +  λLn·(Ln−priorLn)²
+   *                                            +  λK·(k−priorK)²
+   *                                            +  λM·(m−priorM)²
+   *
+   * BOUNDS: m ≥ lastHistYear − minYear + 1  (inflection always in the future).
+   *
+   * @param {number[]} years    — sorted historical years
+   * @param {number[]} salaries — historical salaries aligned to years
+   * @param {number}   endYear  — last predicted year (full horizon end)
    * @returns {(year: number) => number}
    */
-  function fitLogisticLinear(years, salaries) {
+  function fitLogisticLinear(years, salaries, endYear) {
     if (years.length === 0) return () => 0;
     if (years.length === 1) return () => salaries[0];
 
-    const n = years.length;
-    const minYear = years[0];
-    const span = (years[n - 1] - minYear) || 1;
-    const tn = years.map(y => (y - minYear) / span); // normalised [0, 1]
+    const n           = years.length;
+    const minYear     = years[0];
+    const lastHistYear = years[n - 1];
+    const histSpan    = Math.max(lastHistYear - minYear, 1);
+    // endYear is passed by the caller; the fallback is a defensive safety net only.
+    const predictYrs  = Math.max((endYear || lastHistYear + 30) - lastHistYear, 1);
+    const totalSpan   = histSpan + predictYrs;
 
     const maxVal = Math.max(...salaries) || 1;
+    const ys     = salaries.map(s => s / maxVal); // normalised salaries ∈ [0, 1]
 
-    // Normalise salaries → ŷ ∈ [0,1]; optimise Ln = L/maxVal ∈ [1,∞)
-    // This keeps all gradients at O(1), preventing step-size explosions.
-    const ys = salaries.map(s => s / maxVal);
+    // ── Adaptive Bayesian priors ──────────────────────────────────────────────
+    // priorM: inflection 30 % into the full career arc (in years from minYear).
+    // This pushes the S-curve peak well past the observed data so extrapolation
+    // is smooth and gradual rather than saturating immediately after last year.
+    const priorLn = 2.5;                               // ceiling at 2.5× current max
+    const priorM  = 0.3 * totalSpan;                   // in calendar years from minYear
 
-    // ── Informative Bayesian priors (normalised space) ───────────────────────
-    // Prior means encode broad domain knowledge about salary trajectories.
-    const priorLn = 1.5;    // ceiling ≈ 1.5× current max (salary will grow)
-    const priorK  = 2.0;    // moderate S-curve steepness across a career
-    const priorT0 = 0.5;    // inflection point at the centre of the observed span
+    // k derived so the model "passes through" the last historical salary:
+    //   sigmoid(k · (histSpan − priorM)) = ys_last / priorLn
+    // → k = logit(ys_last / priorLn) / (histSpan − priorM)
+    // Since histSpan < priorM (inflection is in the future), denominator < 0
+    // and k > 0 (logit of a value < 0.5 is negative).
+    const denomK  = histSpan - priorM;                 // < 0 when inflection in future
+    // Clamp the logit argument to (0.01, 0.99) to prevent NaN / ±Infinity when
+    // the last observed salary is near or above the prior ceiling.
+    const logitArg = Math.min(0.99, Math.max(0.01, ys[n - 1] / priorLn));
+    const logitVal = Math.log(logitArg / (1 - logitArg));
+    const priorK  = Math.max(0.001, denomK !== 0 ? logitVal / denomK : 0.05);
 
-    // Precision λ = 1/σ²: wide priors (large σ) let data pull params freely;
-    // tight priors (small σ) anchor them near the prior mean when data is sparse.
-    const λLn = 1 / (0.50 ** 2); // σLn  = 0.50 normalised units
-    const λK  = 1 / (4.00 ** 2); // σK   = 4.00 steepness units  (weak)
-    const λT0 = 1 / (1.00 ** 2); // σT0  = 1.00 span units        (weak)
+    // Precision λ = 1/σ²
+    const λLn = 1 / (0.80 ** 2);                         // moderate ceiling prior
+    // Cap λK so a tiny priorK (fallback 0.001) cannot freeze k at its prior value.
+    const λK  = Math.min(1 / (priorK ** 2), 10000);
+    const λM  = 1 / ((totalSpan * 0.15) ** 2);           // σM = 15 % of total span
 
-    // ── MAP optimisation — gradient descent on −log posterior ────────────────
-    // Initialise at the prior means so every run starts in the plausible region.
-    let Ln = priorLn, k = priorK, t0 = priorT0;
+    // ── MAP optimisation ──────────────────────────────────────────────────────
+    // Separate learning rates because k (≈0.05/yr) and m (≈10 yrs) live at
+    // very different scales; a single lr would be unstable for one of them.
+    let Ln = priorLn, k = priorK, m = priorM;
+    const lrLn = 0.01;    // Ln is O(1) in normalised salary units
+    const lrK  = 0.0001;  // k  is O(0.05 /year) — small → needs small step
+    const lrM  = 0.05;    // m  is O(10 years) from minYear
 
-    const lr = 0.01;
-
-    for (let iter = 0; iter < 5000; iter++) {
-      let gLn = 0, gK = 0, gT0 = 0;
+    for (let iter = 0; iter < 10000; iter++) {
+      let gLn = 0, gK = 0, gM = 0;
 
       for (let i = 0; i < n; i++) {
-        const t   = tn[i];
-        const sig = sigmoid(k * (t - t0));
-        const err = Ln * sig - ys[i];  // O(1) residual in normalised space
+        const t   = years[i] - minYear;               // calendar years from start
+        const sig = sigmoid(k * (t - m));
+        const err = Ln * sig - ys[i];
 
-        // Likelihood gradients (data term)
         gLn += err * sig;
-        gK  += err * Ln * sig * (1 - sig) * (t - t0);
-        gT0 += err * Ln * sig * (1 - sig) * (-k);
+        gK  += err * Ln * sig * (1 - sig) * (t - m);
+        gM  += err * Ln * sig * (1 - sig) * (-k);
       }
 
-      // Combined MAP update: data gradient (mean) + prior gradient.
-      // The 1/n factor ensures the prior's influence shrinks as n grows.
-      Ln -= lr * (2 * gLn / n  +  2 * λLn * (Ln - priorLn));
-      k  -= lr * (2 * gK  / n  +  2 * λK  * (k  - priorK));
-      t0 -= lr * (2 * gT0 / n  +  2 * λT0 * (t0 - priorT0));
+      // MAP update: data gradient (normalised by n) + prior gradient
+      Ln -= lrLn * (2 * gLn / n  +  2 * λLn * (Ln - priorLn));
+      k  -= lrK  * (2 * gK  / n  +  2 * λK  * (k  - priorK));
+      m  -= lrM  * (2 * gM  / n  +  2 * λM  * (m  - priorM));
 
-      // Hard parameter constraints (domain feasibility)
-      Ln = Math.max(1.0, Ln);            // ceiling ≥ observed max
-      k  = Math.max(0.01, Math.min(20, k));
+      // Hard parameter constraints
+      Ln = Math.max(1.0, Ln);                         // ceiling ≥ observed max
+      k  = Math.max(0.001, Math.min(2.0, k));         // bounded steepness (per year)
+      // m is in years from minYear; lastHistYear − minYear = histSpan,
+      // so the constraint m ≥ histSpan + 1 places the inflection at least
+      // 1 year after lastHistYear (i.e., always in the future).
+      m  = Math.max(histSpan + 1, m);
     }
 
     const L = Ln * maxVal;
     return (year) => {
-      const t = (year - minYear) / span;
-      return Math.max(0, L * sigmoid(k * (t - t0)));
+      const t = year - minYear;                       // calendar years from start
+      return Math.max(0, L * sigmoid(k * (t - m)));
     };
   }
 
@@ -208,13 +236,14 @@ const Models = (() => {
      * @param {'logisticLinear'} model
      * @param {number[]} years
      * @param {number[]} salaries
+     * @param {number}   endYear  — last predicted year; used for full-horizon normalisation
      * @returns {(year: number) => number}
      */
-    fitSalary(model, years, salaries) {
+    fitSalary(model, years, salaries, endYear) {
       switch (model) {
         case 'logisticLinear':
         default:
-          return fitLogisticLinear(years, salaries);
+          return fitLogisticLinear(years, salaries, endYear);
       }
     },
 

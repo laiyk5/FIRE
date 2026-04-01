@@ -102,8 +102,11 @@ function fireApp() {
       const costs       = hist.map(d => d.costs);
       const returnRates = hist.map(d => d.returnRate / 100);
 
+      const lastHistYear = Math.max(...years);
+      const endYear      = lastHistYear + (parseInt(this.predictYears) || 30);
+
       // ── Fit models ────────────────────────────────────────────────────────
-      const salaryPredictor = Models.fitSalary(this.salaryModel, years, salaries);
+      const salaryPredictor = Models.fitSalary(this.salaryModel, years, salaries, endYear);
       const costPredictor   = Models.fitCosts(this.costModel, years, salaries, costs);
       const returnPredictor = Models.fitReturn(
         this.returnModel,
@@ -125,9 +128,6 @@ function fireApp() {
           isHistorical: true,
         });
       }
-
-      const lastHistYear = Math.max(...years);
-      const endYear      = lastHistYear + (parseInt(this.predictYears) || 30);
 
       for (let year = lastHistYear + 1; year <= endYear; year++) {
         const salary     = salaryPredictor(year);
