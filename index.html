@@ -216,19 +216,21 @@
         <div x-show="salaryModel === 'careerGamma'" class="mt-3">
           <label class="block text-xs font-medium text-gray-500 mb-1">
             Experience Offset (years)
-            <span class="font-normal text-gray-400 ml-1">years of experience before your first data year</span>
+            <span class="font-normal text-gray-400 ml-1">career year of your first data year − 1</span>
           </label>
           <input
             type="number"
             x-model.number="salaryExpOffset"
             min="0" step="1"
             class="w-full border rounded-lg px-3 py-2 text-sm"
-            placeholder="e.g. 5"
+            placeholder="0 = auto-estimate"
           />
           <p class="mt-1 text-xs text-gray-400">
-            Set this to how many years you had already worked before your first recorded year.
-            For example, set 5 if your first data year was your 6th year of career
-            (this places you at <em>x</em> = 6 on the experience axis).
+            Leave at <strong>0</strong> to auto-estimate from your data shape (recommended).
+            Or set manually: enter how many years you had already worked before your first recorded year.
+            For example, set 5 if your first data year was your 6th career year
+            (places you at <em>x</em> = 6 on the experience axis).
+            The estimated value is shown here after each fit.
           </p>
         </div>
       </div>

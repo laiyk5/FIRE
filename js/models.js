@@ -167,6 +167,19 @@ const Models = (() => {
   const GAMMA_OVERFLOW_PENALTY = 1e200;
 
   /**
+   * Small floor value used to prevent division-by-zero when normalising
+   * salary or prior values.
+   */
+  const GAMMA_NORM_FLOOR = 1e-10;
+
+  /**
+   * Upper bound (inclusive) for the career-year search during auto-estimation
+   * of expOffset.  35 covers the typical working life (≈ 35 years from entry
+   * to late career) and matches the extent of the China prior data (x = 31).
+   */
+  const GAMMA_MAX_CAREER_SEARCH = 35;
+
+  /**
    * Evaluate the Career Gamma function: f(x) = a · x^k · exp(−b·x) + c
    * where x = years of experience (x > 0, 1-indexed so x=1 is first career year).
    */
@@ -300,8 +313,6 @@ const Models = (() => {
     const minYear  = years[0];
     const maxSal   = Math.max(...salaries) || 1;
     const normSals = salaries.map(s => s / maxSal);
-    // x = years of experience: 1 + expOffset for first data year, growing from there
-    const expYears = years.map(y => y - minYear + 1 + expOffset);
 
     // ── Step 1: fit China prior on normalised data ────────────────────────────
     const cFloor = Math.min(...GAMMA_PRIOR_SALS);
@@ -316,6 +327,36 @@ const Models = (() => {
       return loss / GAMMA_PRIOR_YEARS.length;
     };
     const priorParams = nelderMead(priorObj, [0.05, 2.0, 0.1, cFloor]);
+
+    // ── Auto-estimate expOffset when left at 0 ───────────────────────────────
+    // Find the career starting year x₀ whose relative growth pattern in the
+    // China prior best matches the user's salary growth pattern.  This places
+    // the historical data at a career stage consistent with the prior's shape,
+    // avoiding the failure mode where data is placed at x=1 (entry-level) when
+    // the user already has a mid-career salary trajectory.
+    if (expOffset === 0 && normSals.length >= 2) {
+      const n = normSals.length;
+      const ref0 = Math.max(normSals[0], GAMMA_NORM_FLOOR);
+      const userGrowth = normSals.map(v => v / ref0);
+
+      let bestX0 = 1;
+      let bestMSE = Infinity;
+      for (let x0 = 1; x0 <= GAMMA_MAX_CAREER_SEARCH; x0++) {
+        const priorRef = Math.max(gammaEval(x0, ...priorParams), GAMMA_NORM_FLOOR);
+        let mse = 0;
+        for (let i = 0; i < n; i++) {
+          const pg = gammaEval(x0 + i, ...priorParams) / priorRef;
+          const d  = userGrowth[i] - pg;
+          mse += d * d;
+        }
+        mse /= n;
+        if (mse < bestMSE) { bestMSE = mse; bestX0 = x0; }
+      }
+      expOffset = bestX0 - 1;   // first data year → career year bestX0
+    }
+
+    // x = years of experience: 1 + expOffset for first data year, growing from there
+    const expYears = years.map(y => y - minYear + 1 + expOffset);
 
     // ── Step 2: fit user posterior with Bayesian regularisation ──────────────
     const postObj = (p) => {

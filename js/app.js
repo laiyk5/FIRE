@@ -139,6 +139,8 @@ function fireApp() {
 
       // Initialise manual parameter fields based on which model was fitted
       if (salaryParams.model === 'careerGamma') {
+        // Sync UI offset to auto-estimated value so user can see & adjust it
+        this.salaryExpOffset = salaryParams.expOffset;
         this.manualSalaryA = parseFloat(salaryParams.a.toFixed(2));
         this.manualSalaryK = parseFloat(salaryParams.k.toFixed(4));
         this.manualSalaryB = parseFloat(salaryParams.b.toFixed(4));
