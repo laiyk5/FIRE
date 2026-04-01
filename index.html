@@ -238,6 +238,72 @@
   </section>
 
   <!-- ═══════════════════════════════════════════════════════════════════════ -->
+  <!--  § 3b  Salary Model Parameter Overrides (shown after first fit)        -->
+  <!-- ═══════════════════════════════════════════════════════════════════════ -->
+  <section x-show="salaryParams" x-cloak class="bg-white rounded-xl shadow p-6 mb-6">
+    <h2 class="text-lg font-semibold mb-1 text-gray-700">📐 Salary Model Parameters</h2>
+    <p class="text-xs text-gray-400 mb-4">
+      Adjust the fitted logistic curve parameters and click <strong>Apply</strong> to instantly
+      regenerate all salary predictions without re-running the full fit.
+      Model: <code class="bg-gray-100 px-1 rounded">f(year) = L · σ(k · (year − minYear − m))</code>
+    </p>
+
+    <div class="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-4">
+
+      <div>
+        <label class="block text-xs font-medium text-gray-500 mb-1">
+          L — Salary Ceiling ($)
+          <span class="font-normal text-gray-400 ml-1">max attainable salary</span>
+        </label>
+        <input
+          type="number"
+          x-model.number="manualSalaryL"
+          step="1000" min="1"
+          class="w-full border rounded-lg px-3 py-2 text-sm"
+        />
+      </div>
+
+      <div>
+        <label class="block text-xs font-medium text-gray-500 mb-1">
+          k — Steepness (per year)
+          <span class="font-normal text-gray-400 ml-1">higher = faster growth</span>
+        </label>
+        <input
+          type="number"
+          x-model.number="manualSalaryK"
+          step="0.001" min="0.001" max="2"
+          class="w-full border rounded-lg px-3 py-2 text-sm"
+        />
+      </div>
+
+      <div>
+        <label class="block text-xs font-medium text-gray-500 mb-1">
+          m — Inflection Offset (years)
+          <span class="font-normal text-gray-400 ml-1">years from first data year</span>
+        </label>
+        <input
+          type="number"
+          x-model.number="manualSalaryM"
+          step="0.5"
+          class="w-full border rounded-lg px-3 py-2 text-sm"
+        />
+      </div>
+
+    </div>
+
+    <button
+      @click="reapplySalaryParams()"
+      class="inline-flex items-center gap-2 bg-indigo-500 hover:bg-indigo-600 active:scale-95 text-white font-semibold px-6 py-2 rounded-lg shadow transition"
+    >
+      ✅ Apply Parameters
+    </button>
+    <p class="mt-2 text-xs text-gray-400">
+      Tip: increase <strong>L</strong> for a higher salary ceiling, lower <strong>k</strong> for a slower growth curve,
+      or push <strong>m</strong> further out to delay the inflection point.
+    </p>
+  </section>
+
+  <!-- ═══════════════════════════════════════════════════════════════════════ -->
   <!--  § 4  Auto-Fit & Predict Button                                        -->
   <!-- ═══════════════════════════════════════════════════════════════════════ -->
   <div class="text-center mb-8">

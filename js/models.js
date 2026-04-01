@@ -131,10 +131,11 @@ const Models = (() => {
     }
 
     const L = Ln * maxVal;
-    return (year) => {
+    const predict = (year) => {
       const t = year - minYear;                       // calendar years from start
       return Math.max(0, L * sigmoid(k * (t - m)));
     };
+    return { predict, params: { L, k, m, minYear } };
   }
 
   // ────────────────────────────────────────────────────────────────────────────
@@ -237,7 +238,7 @@ const Models = (() => {
      * @param {number[]} years
      * @param {number[]} salaries
      * @param {number}   endYear  — last predicted year; used for full-horizon normalisation
-     * @returns {(year: number) => number}
+     * @returns {{ predict: (year: number) => number, params: { L: number, k: number, m: number, minYear: number } }}
      */
     fitSalary(model, years, salaries, endYear) {
       switch (model) {
@@ -281,6 +282,19 @@ const Models = (() => {
         default:
           return fitMA3(years, returnRates);
       }
+    },
+
+    /**
+     * Build a salary predictor directly from explicit logistic parameters.
+     * Used when the user manually overrides L, k, or m in the UI.
+     * @param {{ L: number, k: number, m: number, minYear: number }} params
+     * @returns {(year: number) => number}
+     */
+    salaryPredictorFromParams({ L, k, m, minYear }) {
+      return (year) => {
+        const t = year - minYear;
+        return Math.max(0, L * sigmoid(k * (t - m)));
+      };
     },
   };
 })();
