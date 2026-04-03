@@ -30,6 +30,30 @@
     /* Smooth highlight for inputs */
     input:focus { outline: none; box-shadow: 0 0 0 2px rgba(99,102,241,0.4); border-color: #6366f1; }
     select:focus { outline: none; box-shadow: 0 0 0 2px rgba(99,102,241,0.4); }
+
+    /* ── Tooltip system ───────────────────────────────────────────────────── */
+    .tip { position: relative; display: inline-flex; align-items: center; }
+    .tip-btn {
+      cursor: help; color: #9ca3af; margin-left: 4px;
+      font-size: 0.75rem; font-style: normal;
+      background: none; border: none; padding: 1px 3px; line-height: 1;
+      border-radius: 9999px; vertical-align: middle;
+    }
+    .tip-btn:hover, .tip-btn:focus { color: #6366f1; }
+    .tip-btn:focus { outline: 2px solid #a5b4fc; outline-offset: 1px; }
+    .tip-content {
+      display: none; position: absolute; z-index: 50;
+      left: 50%; transform: translateX(-50%);
+      bottom: calc(100% + 6px);
+      width: 14rem; max-width: 90vw;
+      background: #1f2937; color: #f9fafb;
+      font-size: 0.7rem; font-weight: 400; line-height: 1.45;
+      border-radius: 0.5rem; padding: 0.45rem 0.6rem;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.25); pointer-events: none;
+      white-space: normal;
+    }
+    .tip:hover .tip-content,
+    .tip:focus-within .tip-content { display: block; }
   </style>
 </head>
 
@@ -50,6 +74,67 @@
   </header>
 
   <!-- ═══════════════════════════════════════════════════════════════════════ -->
+  <!--  Quick Start Panel                                                      -->
+  <!-- ═══════════════════════════════════════════════════════════════════════ -->
+  <section
+    x-show="showQuickStart"
+    x-transition:leave="transition ease-in duration-200"
+    x-transition:leave-start="opacity-100"
+    x-transition:leave-end="opacity-0"
+    class="bg-gradient-to-r from-indigo-50 to-blue-50 border border-indigo-200 rounded-xl p-6 mb-6"
+    aria-label="Quick Start Guide"
+  >
+    <div class="flex items-start justify-between mb-3">
+      <div>
+        <h2 class="text-lg font-bold text-indigo-700">🚀 Quick Start Guide</h2>
+        <p class="text-sm text-gray-600 mt-1">Get your FIRE projection in just a few steps.</p>
+      </div>
+      <button
+        @click="dismissQuickStart()"
+        class="text-gray-400 hover:text-gray-600 text-xl leading-none ml-4 flex-shrink-0"
+        aria-label="Dismiss Quick Start"
+      >✕</button>
+    </div>
+
+    <ol class="space-y-3 text-sm text-gray-700 mb-5">
+      <li class="flex gap-3 items-start">
+        <span class="flex-shrink-0 w-6 h-6 rounded-full bg-indigo-500 text-white text-xs flex items-center justify-center font-bold mt-0.5">1</span>
+        <span><strong>Set your starting assets</strong> — enter the total savings or investments you have today in <em>Initial Setup</em> below.</span>
+      </li>
+      <li class="flex gap-3 items-start">
+        <span class="flex-shrink-0 w-6 h-6 rounded-full bg-indigo-500 text-white text-xs flex items-center justify-center font-bold mt-0.5">2</span>
+        <span><strong>Add historical data</strong> — enter at least 1–3 years of your annual income, spending, and investment return rate.</span>
+      </li>
+      <li class="flex gap-3 items-start">
+        <span class="flex-shrink-0 w-6 h-6 rounded-full bg-indigo-500 text-white text-xs flex items-center justify-center font-bold mt-0.5">3</span>
+        <span><strong>Choose your models</strong> — keep the defaults or pick an alternative salary / cost / return model in <em>Fit Options</em>.</span>
+      </li>
+      <li class="flex gap-3 items-start">
+        <span class="flex-shrink-0 w-6 h-6 rounded-full bg-indigo-500 text-white text-xs flex items-center justify-center font-bold mt-0.5">4</span>
+        <span><strong>Click "Auto-Fit &amp; Predict"</strong> — the simulator fits the models to your data and projects your FIRE timeline and charts.</span>
+      </li>
+    </ol>
+
+    <div class="flex flex-wrap gap-3 items-center">
+      <button
+        @click="useSampleData()"
+        class="inline-flex items-center gap-2 bg-white border border-indigo-300 hover:bg-indigo-50 text-indigo-700 text-sm font-medium px-4 py-2 rounded-lg transition"
+        aria-label="Load sample data and run simulation"
+      >
+        📋 Use Sample Data
+      </button>
+      <button
+        @click="autoFitAndPredict(); dismissQuickStart()"
+        class="inline-flex items-center gap-2 bg-indigo-500 hover:bg-indigo-600 active:scale-95 text-white text-sm font-semibold px-6 py-2 rounded-xl shadow transition"
+        aria-label="Run simulation now"
+      >
+        🚀 Run Now
+      </button>
+      <span class="text-xs text-gray-400 ml-1">New here? Try <strong>Use Sample Data</strong> to see instant output.</span>
+    </div>
+  </section>
+
+  <!-- ═══════════════════════════════════════════════════════════════════════ -->
   <!--  § 1  Initial Setup                                                    -->
   <!-- ═══════════════════════════════════════════════════════════════════════ -->
   <section class="bg-white rounded-xl shadow p-6 mb-6">
@@ -57,7 +142,13 @@
     <div class="grid grid-cols-2 sm:grid-cols-3 gap-4">
 
       <div>
-        <label class="block text-xs font-medium text-gray-500 mb-1">Current Year</label>
+        <label class="block text-xs font-medium text-gray-500 mb-1">
+          Current Year
+          <span class="tip">
+            <button type="button" class="tip-btn" aria-label="Help for Current Year">ⓘ</button>
+            <span role="tooltip" class="tip-content">The current calendar year used as the simulation baseline. Historical data and forward projections are anchored to this value.</span>
+          </span>
+        </label>
         <input
           type="number"
           x-model.number="currentYear"
@@ -66,7 +157,13 @@
       </div>
 
       <div>
-        <label class="block text-xs font-medium text-gray-500 mb-1">Starting Assets ($)</label>
+        <label class="block text-xs font-medium text-gray-500 mb-1">
+          Starting Assets ($)
+          <span class="tip">
+            <button type="button" class="tip-btn" aria-label="Help for Starting Assets">ⓘ</button>
+            <span role="tooltip" class="tip-content">Your total liquid savings and investment portfolio today. This is the capital base the simulation grows from year zero.</span>
+          </span>
+        </label>
         <input
           type="number"
           x-model.number="initialAssets"
@@ -75,7 +172,13 @@
       </div>
 
       <div>
-        <label class="block text-xs font-medium text-gray-500 mb-1">Predict Years Ahead</label>
+        <label class="block text-xs font-medium text-gray-500 mb-1">
+          Predict Years Ahead
+          <span class="tip">
+            <button type="button" class="tip-btn" aria-label="Help for Predict Years Ahead">ⓘ</button>
+            <span role="tooltip" class="tip-content">How many years beyond your last historical data point to simulate. A longer horizon shows your full FIRE trajectory; 30–40 years is common.</span>
+          </span>
+        </label>
         <input
           type="number"
           x-model.number="predictYears"
@@ -105,11 +208,41 @@
       <table class="w-full text-sm">
         <thead>
           <tr class="text-left text-xs text-gray-500 border-b uppercase tracking-wide">
-            <th class="py-2 px-3">Year</th>
-            <th class="py-2 px-3">Salary ($)</th>
-            <th class="py-2 px-3">Costs ($)</th>
-            <th class="py-2 px-3">Return Rate (%)</th>
-            <th class="py-2 px-3">Extra Asset Δ ($)</th>
+            <th class="py-2 px-3">
+              Year
+              <span class="tip">
+                <button type="button" class="tip-btn" aria-label="Help for Year column">ⓘ</button>
+                <span role="tooltip" class="tip-content">The calendar year of this historical record.</span>
+              </span>
+            </th>
+            <th class="py-2 px-3">
+              Salary ($)
+              <span class="tip">
+                <button type="button" class="tip-btn" aria-label="Help for Salary column">ⓘ</button>
+                <span role="tooltip" class="tip-content">Your total gross annual income (salary, freelance, etc.) for this year.</span>
+              </span>
+            </th>
+            <th class="py-2 px-3">
+              Costs ($)
+              <span class="tip">
+                <button type="button" class="tip-btn" aria-label="Help for Costs column">ⓘ</button>
+                <span role="tooltip" class="tip-content">Your total annual living expenses and spending for this year.</span>
+              </span>
+            </th>
+            <th class="py-2 px-3">
+              Return Rate (%)
+              <span class="tip">
+                <button type="button" class="tip-btn" aria-label="Help for Return Rate column">ⓘ</button>
+                <span role="tooltip" class="tip-content">The actual investment return rate achieved this year. Enter 8 for 8%. Used to fit the return model.</span>
+              </span>
+            </th>
+            <th class="py-2 px-3">
+              Extra Asset Δ ($)
+              <span class="tip">
+                <button type="button" class="tip-btn" aria-label="Help for Extra Asset Delta column">ⓘ</button>
+                <span role="tooltip" class="tip-content">One-time asset changes not captured by income/costs (e.g. inheritance, property sale). Use a negative value for outflows like a home purchase.</span>
+              </span>
+            </th>
             <th class="py-2 px-3"></th>
           </tr>
         </thead>
@@ -186,7 +319,13 @@
 
       <!-- Salary Model -->
       <div>
-        <label class="block text-xs font-medium text-gray-500 mb-1">Salary Model</label>
+        <label class="block text-xs font-medium text-gray-500 mb-1">
+          Salary Model
+          <span class="tip">
+            <button type="button" class="tip-btn" aria-label="Help for Salary Model">ⓘ</button>
+            <span role="tooltip" class="tip-content">The mathematical model used to project future salary. Career Gamma captures a rise-then-decline arc; Logistic assumes a ceiling you asymptotically approach.</span>
+          </span>
+        </label>
         <select x-model="salaryModel" class="w-full border rounded-lg px-3 py-2 text-sm bg-white">
           <option value="careerGamma">Career Gamma + China Prior (default)</option>
           <option value="logisticLinear">Logistic + Bayesian MAP</option>
@@ -201,6 +340,10 @@
           <label class="block text-xs font-medium text-gray-500 mb-1">
             α — Prior Stiffness
             <span class="font-normal text-gray-400 ml-1">0 = data only · higher = closer to China prior</span>
+            <span class="tip">
+              <button type="button" class="tip-btn" aria-label="Help for Alpha Prior Stiffness">ⓘ</button>
+              <span role="tooltip" class="tip-content">Controls how strongly the model relies on a China career salary prior vs. your own data. 0 = data only; 0.8 (default) blends both; increase if you have very few data points.</span>
+            </span>
           </label>
           <div class="flex items-center gap-3">
             <input
@@ -217,6 +360,10 @@
           <label class="block text-xs font-medium text-gray-500 mb-1">
             Experience Offset (years)
             <span class="font-normal text-gray-400 ml-1">career year of your first data year − 1</span>
+            <span class="tip">
+              <button type="button" class="tip-btn" aria-label="Help for Experience Offset">ⓘ</button>
+              <span role="tooltip" class="tip-content">How many years of career experience you had before your first recorded data year. Leave at 0 to auto-estimate. Set to e.g. 5 if your first data year was your 6th career year.</span>
+            </span>
           </label>
           <input
             type="number"
@@ -237,7 +384,13 @@
 
       <!-- Cost Model -->
       <div>
-        <label class="block text-xs font-medium text-gray-500 mb-1">Cost Model</label>
+        <label class="block text-xs font-medium text-gray-500 mb-1">
+          Cost Model
+          <span class="tip">
+            <button type="button" class="tip-btn" aria-label="Help for Cost Model">ⓘ</button>
+            <span role="tooltip" class="tip-content">How future living costs are projected. Fixed Save Rate scales costs as a fraction of salary; Inflation Linear adds compound growth; Bell Curve models high middle-age costs (family, mortgage).</span>
+          </span>
+        </label>
         <select x-model="costModel" class="w-full border rounded-lg px-3 py-2 text-sm bg-white">
           <option value="fixedSaveRate">Fixed Save Rate (default)</option>
           <option value="inflationLinear">Inflation + Linear</option>
@@ -254,7 +407,13 @@
 
       <!-- Return Model -->
       <div>
-        <label class="block text-xs font-medium text-gray-500 mb-1">Investment Return Model</label>
+        <label class="block text-xs font-medium text-gray-500 mb-1">
+          Investment Return Model
+          <span class="tip">
+            <button type="button" class="tip-btn" aria-label="Help for Investment Return Model">ⓘ</button>
+            <span role="tooltip" class="tip-content">How future investment returns are estimated. 3-Year Moving Average smooths your recent historical rates; Fixed Rate uses a constant annual percentage you specify.</span>
+          </span>
+        </label>
         <select x-model="returnModel" class="w-full border rounded-lg px-3 py-2 text-sm bg-white">
           <option value="ma3">3-Year Moving Average (default)</option>
           <option value="fixedRate">Fixed Rate</option>
@@ -266,8 +425,13 @@
             step="0.1" min="0"
             placeholder="e.g. 7"
             class="w-24 border rounded-lg px-2 py-1 text-sm"
+            aria-label="Fixed annual return rate percentage"
           />
           <span class="text-xs text-gray-400">% per year</span>
+          <span class="tip">
+            <button type="button" class="tip-btn" aria-label="Help for Fixed Return Rate">ⓘ</button>
+            <span role="tooltip" class="tip-content">The constant annual investment return to use for all future years. A typical long-run stock-market nominal return is around 7–8%.</span>
+          </span>
         </div>
         <p class="mt-1 text-xs text-gray-400"
            x-text="returnModel === 'ma3'
@@ -311,6 +475,10 @@
             <label class="block text-xs font-medium text-gray-500 mb-1">
               a — Scale
               <span class="block font-normal text-gray-400">income magnitude</span>
+              <span class="tip">
+                <button type="button" class="tip-btn" aria-label="Help for Scale parameter a">ⓘ</button>
+                <span role="tooltip" class="tip-content">Controls the overall height of the salary curve. Increase a to raise the projected salary peak.</span>
+              </span>
             </label>
             <input type="number" x-model.number="manualSalaryA" step="100" min="0"
               class="w-full border rounded-lg px-3 py-2 text-sm" />
@@ -319,6 +487,10 @@
             <label class="block text-xs font-medium text-gray-500 mb-1">
               k — Growth
               <span class="block font-normal text-gray-400">early-career climb</span>
+              <span class="tip">
+                <button type="button" class="tip-btn" aria-label="Help for Growth parameter k">ⓘ</button>
+                <span role="tooltip" class="tip-content">Steepness of the early-career salary rise. Higher k means faster growth to the peak.</span>
+              </span>
             </label>
             <input type="number" x-model.number="manualSalaryK" step="0.05" min="0.1" max="10"
               class="w-full border rounded-lg px-3 py-2 text-sm" />
@@ -327,6 +499,10 @@
             <label class="block text-xs font-medium text-gray-500 mb-1">
               b — Decay
               <span class="block font-normal text-gray-400">late-career decline</span>
+              <span class="tip">
+                <button type="button" class="tip-btn" aria-label="Help for Decay parameter b">ⓘ</button>
+                <span role="tooltip" class="tip-content">Rate of late-career salary decline. Lower b means a slower descent; higher b causes a sharper drop after the peak.</span>
+              </span>
             </label>
             <input type="number" x-model.number="manualSalaryB" step="0.001" min="0.001" max="1"
               class="w-full border rounded-lg px-3 py-2 text-sm" />
@@ -335,6 +511,10 @@
             <label class="block text-xs font-medium text-gray-500 mb-1">
               c — Floor ($)
               <span class="block font-normal text-gray-400">base salary minimum</span>
+              <span class="tip">
+                <button type="button" class="tip-btn" aria-label="Help for Floor parameter c">ⓘ</button>
+                <span role="tooltip" class="tip-content">The minimum salary the model predicts even in late career. Raise c if you expect a persistent income floor (e.g. part-time work, consulting).</span>
+              </span>
             </label>
             <input type="number" x-model.number="manualSalaryC" step="100"
               class="w-full border rounded-lg px-3 py-2 text-sm" />
@@ -359,6 +539,10 @@
             <label class="block text-xs font-medium text-gray-500 mb-1">
               L — Salary Ceiling ($)
               <span class="font-normal text-gray-400 ml-1">max attainable salary</span>
+              <span class="tip">
+                <button type="button" class="tip-btn" aria-label="Help for Salary Ceiling L">ⓘ</button>
+                <span role="tooltip" class="tip-content">The maximum salary the logistic curve can reach. Raise this if you expect your income to grow significantly higher than current levels.</span>
+              </span>
             </label>
             <input type="number" x-model.number="manualSalaryL" step="1000" min="1"
               class="w-full border rounded-lg px-3 py-2 text-sm" />
@@ -367,6 +551,10 @@
             <label class="block text-xs font-medium text-gray-500 mb-1">
               k — Steepness (per year)
               <span class="font-normal text-gray-400 ml-1">higher = faster growth</span>
+              <span class="tip">
+                <button type="button" class="tip-btn" aria-label="Help for Steepness k">ⓘ</button>
+                <span role="tooltip" class="tip-content">Controls how quickly salary rises toward the ceiling. A higher value means a steeper, faster growth trajectory.</span>
+              </span>
             </label>
             <input type="number" x-model.number="manualSalaryK" step="0.001" min="0.001" max="2"
               class="w-full border rounded-lg px-3 py-2 text-sm" />
@@ -375,6 +563,10 @@
             <label class="block text-xs font-medium text-gray-500 mb-1">
               m — Inflection Offset (years)
               <span class="font-normal text-gray-400 ml-1">years from first data year</span>
+              <span class="tip">
+                <button type="button" class="tip-btn" aria-label="Help for Inflection Offset m">ⓘ</button>
+                <span role="tooltip" class="tip-content">How many years after your first data year the mid-point of salary growth occurs. Push m out to delay the inflection point.</span>
+              </span>
             </label>
             <input type="number" x-model.number="manualSalaryM" step="0.5"
               class="w-full border rounded-lg px-3 py-2 text-sm" />
@@ -413,6 +605,10 @@
             <label class="block text-xs font-medium text-gray-500 mb-1">
               Save Rate (%)
               <span class="block font-normal text-gray-400">share of salary saved each year</span>
+              <span class="tip">
+                <button type="button" class="tip-btn" aria-label="Help for Save Rate">ⓘ</button>
+                <span role="tooltip" class="tip-content">The fraction of annual salary saved and invested each year. Costs equal salary × (1 − save rate). A rate of 30% means 70% is spent on living costs.</span>
+              </span>
             </label>
             <input type="number" x-model.number="manualSaveRate" step="0.1" min="0" max="100"
               class="w-full border rounded-lg px-3 py-2 text-sm" />
@@ -433,6 +629,10 @@
             <label class="block text-xs font-medium text-gray-500 mb-1">
               Annual Inflation Rate (%)
               <span class="block font-normal text-gray-400">compound cost growth per year</span>
+              <span class="tip">
+                <button type="button" class="tip-btn" aria-label="Help for Annual Inflation Rate">ⓘ</button>
+                <span role="tooltip" class="tip-content">The yearly percentage by which costs compound upward. Use historical CPI (e.g. 2–3%) or your personal spending growth rate.</span>
+              </span>
             </label>
             <input type="number" x-model.number="manualInflationRate" step="0.1" min="-20" max="50"
               class="w-full border rounded-lg px-3 py-2 text-sm" />
@@ -441,6 +641,10 @@
             <label class="block text-xs font-medium text-gray-500 mb-1">
               Linear Slope ($/year)
               <span class="block font-normal text-gray-400">additional linear drift on top of inflation</span>
+              <span class="tip">
+                <button type="button" class="tip-btn" aria-label="Help for Linear Slope">ⓘ</button>
+                <span role="tooltip" class="tip-content">A fixed dollar amount added to costs each year in addition to inflation. Useful for modelling lifestyle creep or gradually expanding expenses.</span>
+              </span>
             </label>
             <input type="number" x-model.number="manualInflationSlope" step="100"
               class="w-full border rounded-lg px-3 py-2 text-sm" />
@@ -461,6 +665,10 @@
             <label class="block text-xs font-medium text-gray-500 mb-1">
               Amplitude ($)
               <span class="block font-normal text-gray-400">peak excess above base</span>
+              <span class="tip">
+                <button type="button" class="tip-btn" aria-label="Help for Bell Curve Amplitude">ⓘ</button>
+                <span role="tooltip" class="tip-content">The extra dollars of cost at the peak year above the base floor. Higher amplitude means more pronounced middle-age spending.</span>
+              </span>
             </label>
             <input type="number" x-model.number="manualBellAmplitude" step="500" min="0"
               class="w-full border rounded-lg px-3 py-2 text-sm" />
@@ -469,6 +677,10 @@
             <label class="block text-xs font-medium text-gray-500 mb-1">
               Peak Year
               <span class="block font-normal text-gray-400">year of maximum costs</span>
+              <span class="tip">
+                <button type="button" class="tip-btn" aria-label="Help for Bell Curve Peak Year">ⓘ</button>
+                <span role="tooltip" class="tip-content">The calendar year when costs are highest. Typically aligns with peak family or mortgage expenses (e.g. mid-40s).</span>
+              </span>
             </label>
             <input type="number" x-model.number="manualBellPeakYear" step="1"
               class="w-full border rounded-lg px-3 py-2 text-sm" />
@@ -477,6 +689,10 @@
             <label class="block text-xs font-medium text-gray-500 mb-1">
               Sigma σ (years)
               <span class="block font-normal text-gray-400">width of cost peak</span>
+              <span class="tip">
+                <button type="button" class="tip-btn" aria-label="Help for Bell Curve Sigma">ⓘ</button>
+                <span role="tooltip" class="tip-content">How wide (in years) the cost hump is. Larger σ spreads the elevated spending over a longer period; smaller σ concentrates it around the peak year.</span>
+              </span>
             </label>
             <input type="number" x-model.number="manualBellSigma" step="0.5" min="0.5"
               class="w-full border rounded-lg px-3 py-2 text-sm" />
@@ -485,6 +701,10 @@
             <label class="block text-xs font-medium text-gray-500 mb-1">
               Base Floor ($)
               <span class="block font-normal text-gray-400">minimum cost level</span>
+              <span class="tip">
+                <button type="button" class="tip-btn" aria-label="Help for Bell Curve Base Floor">ⓘ</button>
+                <span role="tooltip" class="tip-content">The baseline cost level before and after the peak hump. This is your steady-state spending when major life-stage expenses are absent.</span>
+              </span>
             </label>
             <input type="number" x-model.number="manualBellBase" step="500" min="0"
               class="w-full border rounded-lg px-3 py-2 text-sm" />
@@ -517,6 +737,10 @@
           Annual Return Rate (%)
           <span class="block font-normal text-gray-400">
             <span x-text="returnParams && returnParams.model === 'ma3' ? 'computed 3-yr avg · editable' : 'user-specified rate'"></span>
+          </span>
+          <span class="tip">
+            <button type="button" class="tip-btn" aria-label="Help for Annual Return Rate">ⓘ</button>
+            <span role="tooltip" class="tip-content">The annual investment return rate applied to projected assets. A typical long-run equity return is 7–8% nominal; adjust downward for bonds or a conservative mix.</span>
           </span>
         </label>
         <input type="number" x-model.number="manualReturnRate" step="0.1" min="-50" max="100"
@@ -565,7 +789,13 @@
 
         <!-- Year selector -->
         <div class="mb-4">
-          <label class="block text-xs font-medium text-gray-500 mb-1">Select Year</label>
+          <label class="block text-xs font-medium text-gray-500 mb-1">
+            Select Year
+            <span class="tip">
+              <button type="button" class="tip-btn" aria-label="Help for Select Year">ⓘ</button>
+              <span role="tooltip" class="tip-content">Choose a year to inspect or override its predicted values. 📌 = historical (read-only); ✏️ = predicted (editable).</span>
+            </span>
+          </label>
           <select
             @change="selectYear($event.target.value)"
             class="w-full border rounded-lg px-3 py-2 text-sm bg-white"
@@ -594,7 +824,13 @@
             <div class="space-y-3">
 
               <div>
-                <label class="block text-xs font-medium text-gray-500 mb-1">Salary ($)</label>
+                <label class="block text-xs font-medium text-gray-500 mb-1">
+                  Salary ($)
+                  <span class="tip">
+                    <button type="button" class="tip-btn" aria-label="Help for Salary in edit panel">ⓘ</button>
+                    <span role="tooltip" class="tip-content">Projected annual income for this year. Override the model's prediction to test different income scenarios.</span>
+                  </span>
+                </label>
                 <input
                   type="number"
                   x-model.number="editData.salary"
@@ -606,7 +842,13 @@
               </div>
 
               <div>
-                <label class="block text-xs font-medium text-gray-500 mb-1">Costs ($)</label>
+                <label class="block text-xs font-medium text-gray-500 mb-1">
+                  Costs ($)
+                  <span class="tip">
+                    <button type="button" class="tip-btn" aria-label="Help for Costs in edit panel">ⓘ</button>
+                    <span role="tooltip" class="tip-content">Projected annual living expenses for this year. Lower costs accelerate FIRE; override here to model austerity or lifestyle changes.</span>
+                  </span>
+                </label>
                 <input
                   type="number"
                   x-model.number="editData.costs"
@@ -618,7 +860,13 @@
               </div>
 
               <div>
-                <label class="block text-xs font-medium text-gray-500 mb-1">Return Rate (%)</label>
+                <label class="block text-xs font-medium text-gray-500 mb-1">
+                  Return Rate (%)
+                  <span class="tip">
+                    <button type="button" class="tip-btn" aria-label="Help for Return Rate in edit panel">ⓘ</button>
+                    <span role="tooltip" class="tip-content">Expected annual investment return for this year. Override to model market downturns, windfalls, or a different asset allocation in a specific year.</span>
+                  </span>
+                </label>
                 <input
                   type="number"
                   x-model.number="editData.returnRate"
@@ -631,7 +879,13 @@
               </div>
 
               <div>
-                <label class="block text-xs font-medium text-gray-500 mb-1">Extra Asset Δ ($)</label>
+                <label class="block text-xs font-medium text-gray-500 mb-1">
+                  Extra Asset Δ ($)
+                  <span class="tip">
+                    <button type="button" class="tip-btn" aria-label="Help for Extra Asset Delta in edit panel">ⓘ</button>
+                    <span role="tooltip" class="tip-content">One-time asset change not captured by income/costs (e.g. inheritance, property sale). Use a negative value for large one-time outflows.</span>
+                  </span>
+                </label>
                 <input
                   type="number"
                   x-model.number="editData.assetChanges"
