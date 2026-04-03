@@ -120,8 +120,16 @@ function fireApp() {
     },
 
     useSampleData() {
+      // clearSavedState resets all inputs to built-in sample data (3 years of
+      // example income/costs/returns) and then autoFitAndPredict produces output
+      // immediately so new users can see the app in action.
       this.clearSavedState();
       this.$nextTick(() => this.autoFitAndPredict());
+    },
+
+    runNowAndDismiss() {
+      this.autoFitAndPredict();
+      this.dismissQuickStart();
     },
 
     // ────────────────────────────────────────────────────────────────────────
