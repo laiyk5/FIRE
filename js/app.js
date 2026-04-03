@@ -10,6 +10,9 @@
 
 function fireApp() {
   return {
+    // ── Quick Start panel ────────────────────────────────────────────────────
+    showQuickStart: true,
+
     // ── Initial Setup ────────────────────────────────────────────────────────
     currentYear:   new Date().getFullYear(),
     initialAssets: 50000,
@@ -74,6 +77,13 @@ function fireApp() {
     // ────────────────────────────────────────────────────────────────────────
 
     init() {
+      // Restore Quick Start panel dismissed state
+      try {
+        if (localStorage.getItem('fire_quickstart_dismissed') === '1') {
+          this.showQuickStart = false;
+        }
+      } catch (_) { /* ignore */ }
+
       const restored = this._loadState();
 
       if (!restored) {
@@ -98,6 +108,28 @@ function fireApp() {
       for (const key of primitives) {
         this.$watch(key, () => this._saveState());
       }
+    },
+
+    // ────────────────────────────────────────────────────────────────────────
+    // Quick Start helpers
+    // ────────────────────────────────────────────────────────────────────────
+
+    dismissQuickStart() {
+      this.showQuickStart = false;
+      try { localStorage.setItem('fire_quickstart_dismissed', '1'); } catch (_) { /* ignore */ }
+    },
+
+    useSampleData() {
+      // clearSavedState resets all inputs to built-in sample data (3 years of
+      // example income/costs/returns) and then autoFitAndPredict produces output
+      // immediately so new users can see the app in action.
+      this.clearSavedState();
+      this.$nextTick(() => this.autoFitAndPredict());
+    },
+
+    runNowAndDismiss() {
+      this.autoFitAndPredict();
+      this.dismissQuickStart();
     },
 
     // ────────────────────────────────────────────────────────────────────────
